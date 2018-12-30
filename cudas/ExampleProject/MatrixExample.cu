@@ -83,12 +83,12 @@ int main(){
   int num_cols = ARRAYSIZE(matrixA[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
   int num_rows1 = ARRAYSIZE(matrixB); //row = sizeof(matrix)/sizeof(matrix[0])
   int num_cols1 = ARRAYSIZE(matrixB[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
-  int size1 = (num_row*num_col) * sizeof(int)
-  RowMajorMat(matrixA, num_rows,num_cols);
+  int size1 = (num_rows*num_cols) * sizeof(int);
+   
   int *a, *b, *c; //host vectors
-  a= (int *)malloc(()*sizeof(int));
-  b = (int *)malloc(size);
-  c=(int *)malloc(size);
+  a= RowMajorMat(matrixA, num_rows,num_cols);
+  b = RowMajorMat(matrixB, num_rows1,num_cols1);
+  c=(int *)malloc(size1);
   
   int *aC,*bC,*cC;//cuda vectors
   
@@ -104,7 +104,9 @@ int main(){
   gpuErrchk(cudaMemcpy(bC,b,size,cudaMemcpyHostToDevice));
   clock_gettime(CLOCK_REALTIME,&start);
   //Create kernel of N blocks holding 1 threads
-  vectorAdd<<<N,1>>>(aC,bC,cC);//can do <<<N,1>>> for parralel
+	
+	
+	
   gpuErrchk( cudaPeekAtLastError() );
   gpuErrchk(cudaDeviceSynchronize());
   gpuErrchk(cudaMemcpy(c,cC,size,cudaMemcpyDeviceToHost));

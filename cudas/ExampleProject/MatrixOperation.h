@@ -1,6 +1,7 @@
 #ifndef MATRIXOPERATION_H_   /* Include guard */
 #define MATRIXOPERATION_H_
 
-int foo(int x);  /* An example function declaration */
+void MatrixOperation(int x);  /* An example function declaration */
+int STRIDE;
 
 #endif // MATRIXOPERATION_H_

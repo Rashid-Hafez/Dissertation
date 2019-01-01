@@ -44,10 +44,10 @@ void MatrixOperation(int* aC, int* bC, int* cC, int width1, int height1, int wid
 
 	int g = sizeof(int*);
 	int gg = sizeof(int**);
-	printf("%d,%d\n",g,gg);
+	printf("sizeof int*= %d, sizeof int** = %d\n",g,gg);
 
-	int size1 = width1 * height1; //matrixA
-	int size2 = width2 * height2; //matrixB
+	int size1 = width1 * height1 * sizeof(int); //matrixA
+	int size2 = width2 * height2 * sizeof(int); //matrixB
 
 	printf("Size1 = %d\n",size1);
 	printf("Height1 = %d\n",height1);

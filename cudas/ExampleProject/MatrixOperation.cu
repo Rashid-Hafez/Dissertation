@@ -11,13 +11,13 @@ Program to multiply 2 matrices together.
 #define BLOCKSIZE 32
 //-------------------------------------------------------------------------------
 
-__global__ void multiplication(float *A, float* B, float *C, int N){
+__global__ void multiplication(int *A, int* B, int *C, int N){
    int ROW = blockIdx.y*blockDim.y+threadIdx.y;
    int COL = blockIdx.x*blockDim.x+threadIdx.x;
    
    int sum = 0;
 
-   if (STRIDE){}
+   //if (STRIDE){}
 
    else if (ROW < N && COL < N){
 
@@ -49,14 +49,17 @@ void MatrixOperation(int* aC, int* bC, int* cC, int width1, int height1, int wid
 	int size1 = width1 * height1; //matrixA
 	int size2 = width2 * height2; //matrixB
 
+	printf("Size1 = %d\n",size1);
+	printf("Height1 = %d\n",height1);
 	//SetupDim(width1,height1,width2,height2);
-
+	//if size > gridsize{}
+	//else:
 	cudaMalloc((void**)&aC, size1);
 	cudaMalloc((void**)&bC,size2);
-	cudaMalloc((void**)&cC, size);
+	cudaMalloc((void**)&cC, size2);
 
 	int gRow = ((MAX(height2,height1)) + BLOCKSIZE - 1)/BLOCKSIZE; //5000 + 31 / 32
-	int gCol = ((MAX(height2,height1)) + BLOCKSIZE - 1)/BLOCKSIZE; //5000 + 31 / 32
+	int gCol = ((MAX(width2,width1)) + BLOCKSIZE - 1)/BLOCKSIZE; //5000 + 31 / 32
 
 	dim3 dimGrid(gRow,gCol);//Number of blocks in the grid
 	dim3 dimBlock (BLOCKSIZE,BLOCKSIZE); //32*32 threads per block. = 1024; Studies suggest this isn't always the most optimal.
@@ -66,7 +69,7 @@ void MatrixOperation(int* aC, int* bC, int* cC, int width1, int height1, int wid
 	gpuErrchk(cudaMemcpy(aC,a,size1,cudaMemcpyHostToDevice));
 	gpuErrchk(cudaMemcpy(bC,b,size2,cudaMemcpyHostToDevice));
 
-	multiplication<<<dimGrid,dimBlock>>>(aC,bC,cC,);
+	multiplication<<<dimGrid,dimBlock>>>(aC,bC,cC,height1);
 
 	gpuErrchk( cudaPeekAtLastError() );
 	gpuErrchk(cudaDeviceSynchronize());

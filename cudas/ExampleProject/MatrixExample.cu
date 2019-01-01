@@ -9,7 +9,7 @@ Example of main class doing opertations on matrices. This class takes a premade 
 // #include "Example.h"
 
 /////////////// MACROS: //////////////
-#define N 5000
+#define N 4
 #define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0]))
 /////////////////////////////
 
@@ -110,8 +110,8 @@ int main(){
   printf("\n Result:");
   
   for(int i=0;i<20;i++){
-  printf("MatrixC row1:%d,%d,%d \n",c[0],a[1],a[2]);
-  printf("MatrixC row2:%d,%d,%d \n",a[N+1],a[N+2],a[N+3]);
+  printf("MatrixC row1:%d,%d,%d \n",c[0],c[1],c[2]);
+  printf("MatrixC row2:%d,%d,%d \n",c[N+1],c[N+2],c[N+3]);
   }
 
   printf("\n freeing all vectors from memory");

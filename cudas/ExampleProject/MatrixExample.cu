@@ -1,8 +1,9 @@
 /**
 Example of main class doing opertations on matrices. This class takes a premade matrces and converts them to 1D array for GPU operations.
 **/
-#include<time.h>
-#include<stdio.h>
+#include <stdio.h>      /* printf, NULL */
+#include <stdlib.h>     /* srand, rand */
+#include <time.h>       /* time */
 #include<cuda.h>
 #include <cuda_runtime.h>
 #include "MatrixOperation.h"
@@ -44,19 +45,22 @@ int * RowMajorMat(int** mat, int n, int m){
   for (int i = 0; i<n; i++){
     for (int j =0; j<m; j++){
     int k = i * m + j;
-      newMat[k] = mat[i][j]
+      newMat[k] = mat[i][j];
     }
   }
   return newMat;
 }
 
 int main(){
-  
+
+  srand(356);
+
   printf("Initialised\n");
   printf("Creating Template Matrix\n");
   int rowz = N;
   int colz = rowz;
-  
+  printf("colz = %d\n",colz );
+
   int **matrixA = (int**) malloc(rowz * sizeof (int*));
   for (int i = 0; i<rowz; i++){
     matrixA[i] = (int *) malloc(colz * sizeof(int));
@@ -68,8 +72,8 @@ int main(){
  
   for(int i = 0; i<rowz; i++){
     for(int j =0; j<colz; j++){
-      matrixA[i][j] = rand()%100/100.00;
-      matrixB[i][j] = rand()%100/100.00;
+      matrixA[i][j] = rand()%100;
+      matrixB[i][j] = rand()%100;
     }
   }
 
@@ -80,16 +84,17 @@ int main(){
   printf("MatrixB row2:%d,%d,%d \n",matrixB[1][0],matrixB[1][1],matrixB[1][2]);
 
   // Get row and col size
-  int num_rows = ARRAYSIZE(matrixA); //row = sizeof(matrix)/sizeof(matrix[0])
-  int num_cols = ARRAYSIZE(matrixA[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
-  int num_rows1 = ARRAYSIZE(matrixB); //row = sizeof(matrix)/sizeof(matrix[0])
-  int num_cols1 = ARRAYSIZE(matrixB[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
+  int num_rows = N;///ARRAYSIZE(matrixA); //row = sizeof(matrix)/sizeof(matrix[0])
+  int num_cols = N;//ARRAYSIZE(matrixA[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
+  int num_rows1 =N; //ARRAYSIZE(matrixB); //row = sizeof(matrix)/sizeof(matrix[0])
+  int num_cols1 = N;//ARRAYSIZE(matrixB[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
   
   int size1 = (num_rows*num_cols) * sizeof(int); // for malloc and memcpy
   int size2 = (num_rows*num_cols) * sizeof(int); // for malloc and memcpy
 
   printf("size1 = %d\n", size1);
-  printf("size2 = %d\n", size2);
+  printf("rows = %d \n",num_rows );
+  printf("cols = %d\n", num_cols);
 
   int *a, *b, *c; //host vectors
   a= RowMajorMat(matrixA, num_rows,num_cols);
@@ -99,20 +104,17 @@ int main(){
   printf("Size of size1 = %d\n",size1);
   printf("Matrix AFTER RowMajor: \n");
   printf("MatrixA row1:%d,%d,%d \n",a[0],a[1],a[2]);
-  printf("MatrixA row2:%d,%d,%d \n",a[N+1],a[N+2],a[N+3]);
+  printf("MatrixA row2:%d,%d,%d \n",a[N],a[N+1],a[N+2]);
   printf("MatrixB row1:%d,%d,%d \n",b[0],b[1],b[2]);
-  printf("MatrixB row2:%d,%d,%d \n",b[N+1],b[N+2],b[N+3]);
+  printf("MatrixB row2:%d,%d,%d \n",b[N],b[N+1],b[N+2]);
   
   int *aC,*bC,*cC;//cuda vectors
 
-	MultiplyMatrix(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c);
+	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c);
   
   printf("\n Result:");
-  
-  for(int i=0;i<20;i++){
   printf("MatrixC row1:%d,%d,%d \n",c[0],c[1],c[2]);
   printf("MatrixC row2:%d,%d,%d \n",c[N+1],c[N+2],c[N+3]);
-  }
 
   printf("\n freeing all vectors from memory");
   free(a); free(b); free(c);

@@ -4,15 +4,23 @@ Example of main class doing opertations on matrices. This class takes a premade 
 #include <stdio.h>      /* printf, NULL */
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
-#include<cuda.h>
+#include <cuda.h>
 #include <cuda_runtime.h>
 #include "MatrixOperation.h"
 // #include "Example.h"
 
-/////////////// MACROS: //////////////
+/////////////// MACROS and GLOBALS: //////////////
 #define N 4
 #define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0]))
 /////////////////////////////
+struct Matrix
+{
+  int row;
+  int col;
+  int p; //chunk wanting to send
+
+  int* mat;
+}mMatrix;
 
 void randomInit(int* data, int size)
 {
@@ -32,26 +40,15 @@ __global__ void vectorAdd(int * aC, int* bC,int* cC){
   }
 }
 
-/**
-Convert normal matrix to ROW MAJOR matrix. a(i,j) can be flatten to 1D array b(k)
-mat[0] to mat[m] = the first row, mat[m+1] = the second row. mat[2*m+1] = third row
-@Param: 
-  - mat : the 2D matrix to convert to 1D
-  - n : amount of rows
-  - m : amount of colombs in the matrix
-**/
-int * RowMajorMat(int** mat, int n, int m){
-  int * newMat = (int *) malloc ((n*m)*sizeof(int));
-  for (int i = 0; i<n; i++){
-    for (int j =0; j<m; j++){
-    int k = i * m + j;
-      newMat[k] = mat[i][j];
-    }
-  }
-  return newMat;
-}
 
-int main(){
+int main(int argc, char** argv){
+
+  //Setup Check//
+  int Dev = 0;
+  cudaDeviceProp pp;
+  setProp(Dev);
+  pp = getProp();
+//-----------------------------------------------------------
 
   srand(356);
 
@@ -99,18 +96,12 @@ int main(){
   int *a, *b, *c; //host vectors
   a= RowMajorMat(matrixA, num_rows,num_cols);
   b = RowMajorMat(matrixB, num_rows1,num_cols1);
-  c=(int *)malloc(size1);
 
-  printf("Size of size1 = %d\n",size1);
-  printf("Matrix AFTER RowMajor: \n");
-  printf("MatrixA row1:%d,%d,%d \n",a[0],a[1],a[2]);
-  printf("MatrixA row2:%d,%d,%d \n",a[N],a[N+1],a[N+2]);
-  printf("MatrixB row1:%d,%d,%d \n",b[0],b[1],b[2]);
-  printf("MatrixB row2:%d,%d,%d \n",b[N],b[N+1],b[N+2]);
+  free(matrixA); free(matrixB);
   
   int *aC,*bC,*cC;//cuda vectors
 
-	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c);
+	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c, &prop);
   
   printf("\n Result:");
   printf("MatrixC row1:%d,%d,%d \n",c[0],c[1],c[2]);
@@ -138,7 +129,20 @@ Maximum sizes of each dimension of a grid: 65,535 × 65,535 × 65,535
     gridDim.x,y,z gives the number of blocks in a grid, in the particular direction
     blockDim.x * gridDim.x gives the number of threads in a grid (in the x direction, in this case)
 
-Striding is: 
 
+Calculate peak bandwidth:
+
+Memory Clock
+
+
+CANT READ AND WRITE ON SAME LINE. MUST USE SYNCTHREADS... 
+so array[idx] = array [idx+1] WRONG!!!
+
+   //must do this: temp = array[idx+1];
+   //syncthreads()
+   //array[idx] = temp;
+   //syncthreads();
+  // COALESE thrreads not stride, if threads acess farr apart. 
+  //put each far apart in 1 array and process it so they all acess close, then you can put them babck in the original array.
 
 **/

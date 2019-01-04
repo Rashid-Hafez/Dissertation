@@ -1,4 +1,52 @@
 /**
+
+TODO: 
+------------------------
+Async Stream
+Shared Mem
+Column based
+------------------------
+
+Tests to conduct:
+
+-1 Column based VS row based // Ren Wu(Et.al) study suggests Column based is better than row based (Coaleased)
+-2 Stream vs non stream 
+-3 Stream Count    // Studies suggest 2 streams most optimal
+-4 Unified vs Pinned //I think Unified will be faster
+-5 Thread Count/Blocksize/BlockCount
+
+Notes:
+-------------------------------------------
+Maximum number of threads per block: 1,024
+Maximum sizes of each dimension of a block: 1,024 × 1,024 × 64,
+Because 1,024 is the upper limit for the number of threads in a block, the largest 2D block is: 32 × 32 == 1,024
+
+Maximum sizes of each dimension of a grid: 65,535 × 65,535 × 65,535 
+65,535 is the upper limit for the builtin variables suchas gridDim.x, gridDim.y, gridDim.z
+
+
+    blockDim.x,y,z gives the number of threads in a block, in the particular direction
+    gridDim.x,y,z gives the number of blocks in a grid, in the particular direction
+    blockDim.x * gridDim.x gives the number of threads in a grid (in the x direction, in this case)
+
+
+Calculate peak bandwidth:
+Memory Clock * 
+
+
+CANT READ AND WRITE ON SAME LINE. MUST USE SYNCTHREADS... 
+so array[idx] = array [idx+1] WRONG!!!
+
+   //must do this: temp = array[idx+1];
+   //syncthreads()
+   //array[idx] = temp;
+   //syncthreads();
+  // COALESE thrreads not stride, if threads acess farr apart. 
+  //put each far apart in 1 array and process it so they all access close, then you can put them babck in the original array.
+
+**/
+
+/**
 Example of main class doing opertations on matrices. This class takes a premade matrces and converts them to 1D array for GPU operations.
 **/
 #include <stdio.h>      /* printf, NULL */
@@ -11,7 +59,7 @@ Example of main class doing opertations on matrices. This class takes a premade 
 
 /////////////// MACROS and GLOBALS: //////////////
 #define N 4
-#define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0]))
+#define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0])) //will only work with stationary pointer
 /////////////////////////////
 struct Matrix
 {
@@ -87,21 +135,21 @@ int main(int argc, char** argv){
   int num_cols1 = N;//ARRAYSIZE(matrixB[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
   
   int size1 = (num_rows*num_cols) * sizeof(int); // for malloc and memcpy
-  int size2 = (num_rows*num_cols) * sizeof(int); // for malloc and memcpy
+  //int size2 = (num_rows*num_cols) * sizeof(int); // for malloc and memcpy
 
   printf("size1 = %d\n", size1);
   printf("rows = %d \n",num_rows );
   printf("cols = %d\n", num_cols);
 
   int *a, *b, *c; //host vectors
-  a= RowMajorMat(matrixA, num_rows,num_cols);
-  b = RowMajorMat(matrixB, num_rows1,num_cols1);
+  if(!(a= RowMajorMat(matrixA, num_rows,num_cols)))fprintf(stderr, "Unable to alocate memory on host\n");
+  if(!(b = RowMajorMat(matrixB, num_rows1,num_cols1)))fprintf(stderr, "Unable to alocate memory on host\n");
 
   free(matrixA); free(matrixB);
   
   int *aC,*bC,*cC;//cuda vectors
 
-	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c, &prop);
+	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c, &pp);
   
   printf("\n Result:");
   printf("MatrixC row1:%d,%d,%d \n",c[0],c[1],c[2]);
@@ -113,36 +161,3 @@ int main(int argc, char** argv){
   
   return 0;
 }
-/**
-
-Notes:
-
-Maximum number of threads per block: 1,024
-Maximum sizes of each dimension of a block: 1,024 × 1,024 × 64,
-Because 1,024 is the upper limit for the number of threads in a block, the largest 2D block is: 32 × 32 == 1,024
-
-Maximum sizes of each dimension of a grid: 65,535 × 65,535 × 65,535 
-65,535 is the upper limit for the builtin variables suchas gridDim.x, gridDim.y, gridDim.z
-
-
-    blockDim.x,y,z gives the number of threads in a block, in the particular direction
-    gridDim.x,y,z gives the number of blocks in a grid, in the particular direction
-    blockDim.x * gridDim.x gives the number of threads in a grid (in the x direction, in this case)
-
-
-Calculate peak bandwidth:
-
-Memory Clock
-
-
-CANT READ AND WRITE ON SAME LINE. MUST USE SYNCTHREADS... 
-so array[idx] = array [idx+1] WRONG!!!
-
-   //must do this: temp = array[idx+1];
-   //syncthreads()
-   //array[idx] = temp;
-   //syncthreads();
-  // COALESE thrreads not stride, if threads acess farr apart. 
-  //put each far apart in 1 array and process it so they all acess close, then you can put them babck in the original array.
-
-**/

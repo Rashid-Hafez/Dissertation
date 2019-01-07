@@ -5,6 +5,7 @@ TODO:
 Async Stream
 Shared Mem
 Column based
+Matrix Struct
 ------------------------
 
 Tests to conduct:
@@ -43,6 +44,12 @@ so array[idx] = array [idx+1] WRONG!!!
    //syncthreads();
   // COALESE thrreads not stride, if threads acess farr apart. 
   //put each far apart in 1 array and process it so they all access close, then you can put them babck in the original array.
+
+  @ References:
+  - Cuda By Example
+  - HP
+  - Stencil Kernel
+  - 
 
 **/
 

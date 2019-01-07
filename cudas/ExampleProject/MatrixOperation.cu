@@ -1,5 +1,8 @@
 /**-------------------------------------------------------------------------------
-Program to multiply 2 matrices together.
+Name:
+
+@ Description:
+- Program to multiply 2 matrices together.
 -------------------------------------------------------------------------------**/
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -31,6 +34,7 @@ __global__ void multiplication(int *A, int* B, int *C, int N){
    int COL = blockIdx.x*blockDim.x+threadIdx.x;
    int sum = 0;
 
+   //ZEROED out of bounds indexes
    if (ROW < N && COL < N){
 
    	for (int i = 0; i < N; ++i)
@@ -70,21 +74,39 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 	/*----------------------------------------------------- */
 
 	if (PINNED) //if page locked memory on matrix
-	{
+	{	printf("Begin Partitioning\n");
 	/*------------------Partition------------------------*/
 		unsigned long long SplitA_Row;
 		unsigned long long SplitB_Col;
 		unsigned long long N;
 		unsigned long long MaxData = height1 * width2; //total entries of A and B
+		unsigned long long SubMatSize;
 
-		if (MaxData>= GRIDSIZE)
-		{
-			long overflow = MaxData%GRIDSIZE; //Overflow;
+		SplitA_Row = ceil (height1/2) ;
+		SplitB_Col = ceil (width2/2) ;
+		//Make N at Least Half the grid size 
+		N = SplitA_Row*SplitB_Col;
+
+		while(N>=GRIDSIZE){
+			if (N<GRIDSIZE) //Safety precaution
+			{
+				printf("N is solved\n");
+				break;
+			}
+			if (N>= GRIDSIZE) //If our matrix is still too big then...
+			{
+				printf("N BIGGER THAN GRIDSIZE\n");
+				SplitA_Row = ceil(SplitA_Row/2);
+				SplitB_Col = ceil(SplitB_Col/2);
+				N = SplitA_Row * SplitB_Col;
+			}
 		}
-		N = SplitA_Row + SplitB_Col; //Partition wanting to send
 
 		SetupDim(SplitA_Row, SplitB_Col, &dimGrid, &dimBlock, &prop);
 		
+		//Timer START LETS GOOO!
+		gpuErrchk(cudaEventRecord(start,0));
+
 		gpuErrchk(cudaMalloc((void**)&aC, N));
 		gpuErrchk(cudaMalloc((void**)&bC, N));
 		gpuErrchk(cudaMalloc((void**)&cC, N));
@@ -101,6 +123,14 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 
 		}
 	}
+
+	gpuErrchk(cudaStreamSynchronize(stream0)); // Tell CPU to hold his horses and wait
+
+	gpuErrchk(cudaEventRecord(stop,0));
+	gpuErrchk(cudaEventSynchronize(stop));
+	gpuErrchk(cudaEventElapsedTime(&time, start, stop));
+
+	printf("Time Taken: %3.1f ms/n \n",time );
 
 	gpuErrchk(cudaDestroyStream(stream0));
 /*-------------------------------------------------------------------*/
@@ -138,17 +168,19 @@ void SetupDim (long long width1, long long height2, dim3 * grid, dim3* block, cu
 	if (prop.major>=2)
 	{
 		printf("Device compute is 2 or over, utilizing thread count\n");
-		int gRow = ceil(width1/BLOCKSIZE);
-		int gCol = ceil(height2/BLOCKSIZE);
-		*grid(gRow,gCol);
+		int gCol = ceil(width1/BLOCKSIZE);
+		int gRow = ceil(height2/BLOCKSIZE);
+		printf("Grid is %d by %d \n",gCol,gRow );
+		*grid(gCol,gRow);
 		*block(BLOCKSIZE,BLOCKSIZE); //(BLOCKSIZE,BLOCKSIZE); //32*32 threads per block. = 1024; Studies suggest this isn't always the most optimal.
 	}
 	else{
 		printf("Device Compute Capacity less than 2, reducing threadcount\n");
 		BLOCKSIZE = 16;
-		int gRow = ceil(height2/BLOCKSIZE);
 		int gCol = ceil(width1/BLOCKSIZE);
-		*grid(gRow,gCol);
+		int gRow = ceil(height2/BLOCKSIZE);
+		printf("Grid is %d by %d \n", gCol, gRow);
+		*grid(gCol,gRow);
 		*block(BLOCKSIZE,BLOCKSIZE);
 	}
 

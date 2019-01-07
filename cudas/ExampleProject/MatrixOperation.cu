@@ -12,6 +12,7 @@ Name:
 #define MAX(a,b) (a>b ? a:b)
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 int STRIDE;
+int unified =0;
 int PINNED = 0;
 int nStreams;
 long long GRIDSIZE = (long long)65535L*65535L; //Larger than this does not fit on GPU
@@ -20,18 +21,21 @@ int partitions = 2;
 static cudaDeviceProp PROPS;
 //-------------------------------------------------------------------------------
 
-/** Description:
-Row based matrix multiplication with optimised shared memory kernel.
+/****************************************** 
+
+@Description: MULT_KERNEL
+
+Row based square matrix multiplication with optimised shared memory kernel.
 
 @Parameters:
 	- A, B: 1 Dimensional row based arrays
-	- C
-	- N
+	- C: result matrix
+	- N: Size of row/column
 
-**/
+********************************************/
 __global__ void multiplication(int *A, int* B, int *C, int N){
-   int ROW = blockIdx.y*blockDim.y+threadIdx.y; // BlockIndex * BlocksizeY + ThreadY
-   int COL = blockIdx.x*blockDim.x+threadIdx.x;
+   int ROW = blockIdx.y*BLOCKSIZE+threadIdx.y; // BlockIndex * BlocksizeY + ThreadY
+   int COL = blockIdx.x*BLOCKSIZE+threadIdx.x;
    int sum = 0;
 
    //ZEROED out of bounds indexes
@@ -41,7 +45,6 @@ __global__ void multiplication(int *A, int* B, int *C, int N){
    	{
    		sum += A[ROW*N+i] * B[i * N + COL]; 
    	}
-   	
    	C[ROW*N+COL] = sum;
    }
 }
@@ -74,7 +77,8 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 	/*----------------------------------------------------- */
 
 	if (PINNED) //if page locked memory on matrix
-	{	printf("Begin Partitioning\n");
+	{	printf("Pinned... Partitioning\n");
+
 	/*------------------Partition------------------------*/
 		unsigned long long SplitA_Row;
 		unsigned long long SplitB_Col;
@@ -82,8 +86,8 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 		unsigned long long MaxData = height1 * width2; //total entries of A and B
 		unsigned long long SubMatSize;
 
-		SplitA_Row = ceil (height1/2) ;
-		SplitB_Col = ceil (width2/2) ;
+		SplitA_Row = ceil (height1/partitions) ;
+		SplitB_Col = ceil (width2/partitions) ;
 		//Make N at Least Half the grid size 
 		N = SplitA_Row*SplitB_Col;
 
@@ -96,8 +100,8 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 			if (N>= GRIDSIZE) //If our matrix is still too big then...
 			{
 				printf("N BIGGER THAN GRIDSIZE\n");
-				SplitA_Row = ceil(SplitA_Row/2);
-				SplitB_Col = ceil(SplitB_Col/2);
+				SplitA_Row = ceil(SplitA_Row/partitions);
+				SplitB_Col = ceil(SplitB_Col/partitions);
 				N = SplitA_Row * SplitB_Col;
 			}
 		}
@@ -119,7 +123,7 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 
 			multiplication<<<dimGrid,dimBlock,stream0>>>(aC,bC,cC,height1);
 
-			gpuErrchk(cudaMemcpy(c,cC,size1,cudaMemcpyDeviceToHost,stream0));
+			gpuErrchk(cudaMemcpy(c+i,cC,size1,cudaMemcpyDeviceToHost,stream0)); //i = N;
 
 		}
 	}
@@ -133,7 +137,12 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 	printf("Time Taken: %3.1f ms/n \n",time );
 
 	gpuErrchk(cudaDestroyStream(stream0));
-/*-------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+else if (unified)
+{
+
+}
 
 /*--------------------- NO STREAM MULTIPLICATION------------------------------*/
 	else{
@@ -209,7 +218,7 @@ int * RowMajorMat(int** mat, long long n,long long m){
 int * newMat;
 unsigned long long ss = n*m;
  if(ss <= GRIDSIZE/10000){
- 	newMat = (int*) malloc(ss*sizeof(int));
+ 	if(!SetupMat(&newMat)) return 0;
  } 
  else{
  	printf("Setting up mat for page locked storage\n");
@@ -226,7 +235,16 @@ unsigned long long ss = n*m;
 }
 
 /**
-Convert to Column based 1D array. Depending on the operation either row or column major arrays can lead to more coalesing of threads.
+Description:
+Convert normal matrix to COLUMN MAJOR matrix, if the matrices are bigger than the GPU memory the function will use pinned memory (i.e. cudahostmalloc). 
+
+a(i,j) can be flatten to 1D array b(k)
+mat[0] to mat[m] = the first row, mat[m+1] = the second row. mat[2*m+1] = third row
+
+@Param: 
+  - mat : the 2D matrix to convert to 1D
+  - n : amount of rows
+  - m : amount of colombs in the matrix
 **/
 int * ColumnMajorMat(int** mat, long long n, long long m){
 int * newMat;
@@ -268,7 +286,7 @@ int SetupMat(int* mat){
 	if (input == 2) //UNIFIED MEM
 	{
 		/*
-		pinned = true; 
+		unified = true; 
 		cudaMallocManaged() */
 	}
 }

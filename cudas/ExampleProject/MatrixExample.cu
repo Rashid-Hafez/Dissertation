@@ -3,18 +3,22 @@
 TODO: 
 ------------------------
 Async Stream
-Shared Mem
+Shared Mem/Tiling
 Column based
 Matrix Struct
 ------------------------
 
 Tests to conduct:
 
--1 Column based VS row based // Ren Wu(Et.al) study suggests Column based is better than row based (Coaleased)
--2 Stream vs non stream 
--3 Stream Count    // Studies suggest 2 streams most optimal
--4 Unified vs Pinned //I think Unified will be faster
--5 Thread Count/Blocksize/BlockCount
+- 1 Column based VS row based // Ren Wu(Et.al) study suggests Column based is better than row based (Coaleased)
+- 2 SharedMem vs No shared mem
+- 3 Stream vs non stream 
+- 4 Stream Count    // Studies suggest 2 streams most optimal
+- 5 Unified vs Pinned //I think Unified will be faster
+
+- 6 Thread Count/Blocksize/BlockCount. This needs to be adapted for every test.
+- 7 B =Column based  A =row based. vicea versa
+
 
 Notes:
 -------------------------------------------
@@ -72,7 +76,7 @@ struct Matrix
 {
   int row;
   int col;
-  int p; //chunk wanting to send
+  int p; //partition wanting to send
 
   int* mat;
 }mMatrix;
@@ -138,7 +142,7 @@ int main(int argc, char** argv){
   // Get row and col size
   int num_rows = N;///ARRAYSIZE(matrixA); //row = sizeof(matrix)/sizeof(matrix[0])
   int num_cols = N;//ARRAYSIZE(matrixA[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
-  int num_rows1 =N; //ARRAYSIZE(matrixB); //row = sizeof(matrix)/sizeof(matrix[0])
+  int num_rows1 = N; //ARRAYSIZE(matrixB); //row = sizeof(matrix)/sizeof(matrix[0])
   int num_cols1 = N;//ARRAYSIZE(matrixB[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
   
   int size1 = (num_rows*num_cols) * sizeof(int); // for malloc and memcpy
@@ -157,14 +161,34 @@ int main(int argc, char** argv){
   int *aC,*bC,*cC;//cuda vectors
 
 	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c, &pp);
-  
-  printf("\n Result:");
-  printf("MatrixC row1:%d,%d,%d \n",c[0],c[1],c[2]);
-  printf("MatrixC row2:%d,%d,%d \n",c[N+1],c[N+2],c[N+3]);
 
   printf("\n freeing all vectors from memory");
+  printf("Verifying...\n", );
+
+  Check(c);
+
   free(a); free(b); free(c);
   cudaFree(aC); cudaFree(bC); cudaFree(cC);//changed to cuda free
   
   return 0;
+}
+
+/**
+  Verify if multiplication output is correct
+**/
+int Check(int* a1, int* b1, int nm, int* c){
+
+  int sum;
+  for (int i = 0; i < nm; ++i)
+  {
+    for (int j = 0; j < nm; ++j)
+    {
+      sum+= a1[i*nm+j] * b1[j*nm+nm]; 
+    }
+
+    if(c[i*nm+nm]!=sum){
+      printf("thats wrong bro, index = %d\n",i*nm+j);
+    }
+  }
+
 }

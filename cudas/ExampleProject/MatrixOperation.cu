@@ -60,7 +60,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 
 void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long height1, long long width2,
-	long long height2, int a,int b,int c, cudaDeviceProp *prop){
+	long long height2, int **a,int** b,int** c, cudaDeviceProp *prop){
 
 	if(width1 != height2){
 		printf("Error, width of first mat must = height of second mat\n");
@@ -112,16 +112,18 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 		//Timer START LETS GOOO!
 		gpuErrchk(cudaEventRecord(start,0));
 		//malloc
+		printf("CudaMalloc\n");
 		gpuErrchk(cudaMalloc((void**)&aC, N));
 		gpuErrchk(cudaMalloc((void**)&bC, N));
 		gpuErrchk(cudaMalloc((void**)&cC, N));
 
+		printf("a = \n");
 /*---------------------ASYNC STREAM LOOP------------------------------*/
 		for (int i = 0; i < MaxData; i+=N)
 		{
 			printf("%d\n",a+i ); 
-			gpuErrchk(cudaMemcpyAsync(aC,&a+i,N*sizeof(int),cudaMemcpyHostToDevice,stream0));
-			gpuErrchk(cudaMemcpyAsync(bC,&b+i,N*sizeof(int),cudaMemcpyHostToDevice,stream0));
+			gpuErrchk(cudaMemcpyAsync(aC,a,N*sizeof(int),cudaMemcpyHostToDevice,stream0));
+			gpuErrchk(cudaMemcpyAsync(bC,b+i,N*sizeof(int),cudaMemcpyHostToDevice,stream0));
 			//									multiply									//
 			multiplication<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,height1,BlockSIZE);
 			//
@@ -158,7 +160,7 @@ else if (unified)
 		cudaMalloc((void**)&cC, size2);
 
 		gpuErrchk( cudaPeekAtLastError() );
-		cudaDeviceSynchronize();
+		//cudaDeviceSynchronize();
 		gpuErrchk(cudaMemcpy(&c,cC,size1,cudaMemcpyDeviceToHost));
 	}
 }

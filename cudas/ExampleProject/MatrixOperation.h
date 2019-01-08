@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #define BLOCKSIZE 32
 
-void MatrixOperation(int* aC, int* bC, int*cC, long long width1, long long height1, long long width2, long long height2, int a,int b,int c, cudaDeviceProp* prop);  
+void MatrixOperation(int* aC, int* bC, int*cC, long long width1, long long height1, long long width2, long long height2, int **a,int** b,int **c, cudaDeviceProp* prop);  
 
 __global__ void multiplication(int *A, int* B, int* C, int N, int BlockSIZE);
 

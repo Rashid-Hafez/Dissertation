@@ -161,7 +161,7 @@ int main(int argc, char** argv){
   
   int *aC,*bC,*cC;//cuda vectors
 
-	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c, &pp);
+	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, &a, &b, &c, &pp);
 
   printf("\n freeing all vectors from memory");
 

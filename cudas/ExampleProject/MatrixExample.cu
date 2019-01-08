@@ -71,6 +71,7 @@ Example of main class doing opertations on matrices. This class takes a premade 
 /////////////// MACROS and GLOBALS: //////////////
 #define N 4
 #define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0])) //will only work with stationary pointer
+int Check(int*a,int*b,int nm, int*c);
 /////////////////////////////
 struct Matrix
 {
@@ -163,9 +164,8 @@ int main(int argc, char** argv){
 	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c, &pp);
 
   printf("\n freeing all vectors from memory");
-  printf("Verifying...\n", );
 
-  Check(c);
+  Check(a,b,N*N,c);
 
   free(a); free(b); free(c);
   cudaFree(aC); cudaFree(bC); cudaFree(cC);//changed to cuda free
@@ -187,8 +187,9 @@ int Check(int* a1, int* b1, int nm, int* c){
     }
 
     if(c[i*nm+nm]!=sum){
-      printf("thats wrong bro, index = %d\n",i*nm+j);
+      printf("thats wrong bro, index = %d\n",i*nm+nm);
+      return(0);
     }
   }
-
+return(1);
 }

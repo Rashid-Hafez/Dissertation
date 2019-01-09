@@ -22,6 +22,9 @@ Tests to conduct:
 
 Notes:
 -------------------------------------------
+nvcc -o MatrixExample MatrixExample.cu MatrixOperation.cu
+cuda-memcheck MatrixExample
+
 Maximum number of threads per block: 1,024
 Maximum sizes of each dimension of a block: 1,024 × 1,024 × 64,
 Because 1,024 is the upper limit for the number of threads in a block, the largest 2D block is: 32 × 32 == 1,024
@@ -81,7 +84,7 @@ struct Matrix
 
   int* mat;
 }mMatrix;
-
+//////////////////////////////////////////////////////////
 void randomInit(int* data, int size)
 {
     for (int i = 0; i < size; ++i){
@@ -91,7 +94,7 @@ void randomInit(int* data, int size)
                 }
         }
 }
-
+//////////////////////////////////////////////////////////
 //Basic vector addition. Just here for debugging purposes.
 __global__ void vectorAdd(int * aC, int* bC,int* cC){
   
@@ -99,8 +102,52 @@ __global__ void vectorAdd(int * aC, int* bC,int* cC){
     cC[blockIdx.x] = aC[blockIdx.x] + bC[blockIdx.x];
   }
 }
+///////////////////////////////////////////////////////////////////////////////////////
 
+/**
+Description:
+Convert normal matrix to ROW MAJOR matrix, if the matrices are bigger than the GPU memory the function will use pinned memory (i.e. hostmalloc). 
 
+a(i,j) can be flatten to 1D array b(k)
+mat[0] to mat[m] = the first row, mat[m+1] = the second row. mat[2*m+1] = third row
+
+@Param: 
+  - mat : the 2D matrix to convert to 1D
+  - n : amount of rows
+  - m : amount of colombs in the matrix
+
+  MOVE TO MAIN CLASS
+**/
+int RowMajorMat(int** mat, long long n,long long m, int * & a){
+
+unsigned long long ss = n*m;
+int input;
+	printf("Enter 1 for pinned, 2 for unified, 3 for normal\n");
+	scanf("%d",&input);
+	if (input ==1) //PINNED MEM
+	{ 
+		printf("Pinned!\n");
+		SetPinned(42);
+		printf("array = %p\n",&a );
+		gpuErrchk(cudaHostAlloc((void**)&a,ss*sizeof(int),cudaHostAllocPortable));
+	}
+	if(input==2)
+	{
+		SetUnified(1);
+	}
+	if (input==3)
+	{
+		if(!(a = (int*)malloc(ss*sizeof(int))))return 0;
+	}
+  for (long i = 0; i<n; i++){
+    for (long j =0; j<m; j++){
+    long k = i * m + j;
+      a[k] = mat[i][j];
+    }
+  }
+  return 1;
+}
+///////////////////////////////////////////////////////////////////////////////////////
 int main(int argc, char** argv){
 
   //Setup Check//
@@ -154,14 +201,16 @@ int main(int argc, char** argv){
   printf("cols = %d\n", num_cols);
 
   int *a, *b, *c; //host vectors
-  if(!(a= RowMajorMat(matrixA, num_rows,num_cols)))fprintf(stderr, "Unable to alocate memory on host\n");
-  if(!(b = RowMajorMat(matrixB, num_rows1,num_cols1)))fprintf(stderr, "Unable to alocate memory on host\n");
+  printf("a = %p\n",&a );
+  if(!(RowMajorMat(matrixA, num_rows,num_cols, a)))fprintf(stderr, "Unable to alocate memory on host\n");
+  printf("b = %p\n",&b );
+  if(!(RowMajorMat(matrixB, num_rows1,num_cols1,b)))fprintf(stderr, "Unable to alocate memory on host\n");
 
   free(matrixA); free(matrixB);
   
   int *aC,*bC,*cC;//cuda vectors
 
-	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, &a, &b, &c, &pp);
+	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c, &pp);
 
   printf("\n freeing all vectors from memory");
 

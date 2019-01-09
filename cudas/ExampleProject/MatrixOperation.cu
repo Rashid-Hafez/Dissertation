@@ -8,11 +8,8 @@ Name:
 #include <cuda_runtime.h>
 #include <math.h>
 #include "MatrixOperation.h"
-#include <stdio.h>
 #define BLOCKSIZE 32
 #define MAX(a,b) (a>b ? a:b)
-#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-
 int STRIDE;
 int unified =0;
 int PINNED = 0;
@@ -50,17 +47,18 @@ __global__ void multiplication(int *A, int* B, int *C, int N, int BlockSIZE){
    }
 }
 
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-   if (code != cudaSuccess)
-   {
-      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-      if (abort) exit(code);
-   }
-}
+void MatrixOperation(int* &aC, int*& bC, int* &cC, long long width1, long long height1, long long width2,
+	long long height2, int *&a,int*& b,int*& c, cudaDeviceProp *prop){
 
-void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long height1, long long width2,
-	long long height2, int **a,int** b,int** c, cudaDeviceProp *prop){
+	int * test;
+	int * test2;
+	int* aCC;
+
+		gpuErrchk(cudaMallocHost((void**)&test,120*sizeof(int)));
+		gpuErrchk(cudaMalloc((void**)&aCC, 120*sizeof(int)));
+		size_t abb = 120*sizeof(int);
+		gpuErrchk(cudaMemcpy(aCC,test,abb,cudaMemcpyHostToDevice));
+
 
 	if(width1 != height2){
 		printf("Error, width of first mat must = height of second mat\n");
@@ -69,10 +67,8 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 
 	/*------------Basic Generic Setup------------------- */
 	cudaStream_t stream0;
-	gpuErrchk(cudaStreamCreate(&stream0));
 	cudaEvent_t start,stop;
 	float time;
-	/*----------------------------------------------------- */
 
 	if (PINNED) //if page locked memory on matrix
 	{	printf("Pinned... Partitioning\n");
@@ -113,21 +109,24 @@ void MatrixOperation(int* aC, int* bC, int* cC, long long width1, long long heig
 		gpuErrchk(cudaEventRecord(start,0));
 		//malloc
 		printf("CudaMalloc\n");
-		gpuErrchk(cudaMalloc((void**)&aC, N));
-		gpuErrchk(cudaMalloc((void**)&bC, N));
-		gpuErrchk(cudaMalloc((void**)&cC, N));
+		gpuErrchk(cudaMalloc((void**)&aC, N*sizeof(int)));
+		gpuErrchk(cudaMalloc((void**)&bC, N*sizeof(int)));
+		gpuErrchk(cudaMalloc((void**)&cC, N*sizeof(int)));
 
-		printf("a = \n");
+		printf("a = %p\n",&a);
+		printf("b = %p\n",&b);
+		
+	
 /*---------------------ASYNC STREAM LOOP------------------------------*/
 		for (int i = 0; i < MaxData; i+=N)
 		{
-			printf("%d\n",a+i ); 
-			gpuErrchk(cudaMemcpyAsync(aC,a,N*sizeof(int),cudaMemcpyHostToDevice,stream0));
+			printf("%p\n",&a+i ); 
+			gpuErrchk(cudaMemcpy(aC,test+i,N*sizeof(int),cudaMemcpyHostToDevice));
 			gpuErrchk(cudaMemcpyAsync(bC,b+i,N*sizeof(int),cudaMemcpyHostToDevice,stream0));
 			//									multiply									//
 			multiplication<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,height1,BlockSIZE);
 			//
-			gpuErrchk(cudaMemcpyAsync(*c+i,cC,N*sizeof(int),cudaMemcpyDeviceToHost)); //i = N;
+			gpuErrchk(cudaMemcpyAsync(c+i,cC,N*sizeof(int),cudaMemcpyDeviceToHost,stream0)); //i = N;
 		}
 
 		gpuErrchk(cudaStreamSynchronize(stream0)); // Tell CPU to hold his horses and wait
@@ -212,41 +211,6 @@ void SetupDim (long long width1, long long height2, cudaDeviceProp prop){
 }
 
 /**
-
-Description:
-Convert normal matrix to ROW MAJOR matrix, if the matrices are bigger than the GPU memory the function will use pinned memory (i.e. hostmalloc). 
-
-a(i,j) can be flatten to 1D array b(k)
-mat[0] to mat[m] = the first row, mat[m+1] = the second row. mat[2*m+1] = third row
-
-@Param: 
-  - mat : the 2D matrix to convert to 1D
-  - n : amount of rows
-  - m : amount of colombs in the matrix
-
-  MOVE TO MAIN CLASS
-**/
-int * RowMajorMat(int** mat, long long n,long long m){
-int * newMat;
-unsigned long long ss = n*m;
- if(ss <= GRIDSIZE/10000){
- 	if(!(newMat=SetupMat(ss))) return 0;
- } 
- else{
- 	printf("Setting up mat for page locked storage\n");
- 	if(!(newMat = SetupMat(ss))) return 0;
- }
-
-  for (long i = 0; i<n; i++){
-    for (long j =0; j<m; j++){
-    long k = i * m + j;
-      newMat[k] = mat[i][j];
-    }
-  }
-  return newMat;
-}
-
-/**
 Description:
 Convert normal matrix to COLUMN MAJOR matrix, if the matrices are bigger than the GPU memory the function will use pinned memory (i.e. cudahostmalloc). 
 
@@ -257,8 +221,8 @@ mat[0] to mat[m] = the first row, mat[m+1] = the second row. mat[2*m+1] = third 
   - mat : the 2D matrix to convert to 1D
   - n : amount of rows
   - m : amount of colombs in the matrix
-**/
-int * ColumnMajorMat(int** mat, long long n, long long m){
+**//*
+int ColumnMajorMat(int** mat, long long n, long long m){
 int * newMat;
 unsigned long long ss = n*m;
  if(ss <= GRIDSIZE){
@@ -277,47 +241,24 @@ unsigned long long ss = n*m;
   }
   return newMat;
 }
-
-//Setup for unified/pinned and others
-int* SetupMat(long long size){
-
-	if (!PROPS.canMapHostMemory)
-	{
-		printf("Pinned not supported\n");
-		if(!PROPS.managedMemory){
-		fprintf(stderr,"Unified AND Pinned memory not supported... exiting\n");
-		return (0);
-		}
-	}
-
-	int input;
-	printf("Enter 1 for pinned, 2 for unified\n");
-	scanf("%d",&input);
-	if (input ==1) //PINNED MEM
-	{ 
-		printf("Pinned!\n");
-		PINNED =42;
-		int *mat;
-		gpuErrchk(cudaHostAlloc((void**)&mat,size*sizeof(int),cudaHostAllocPortable)); //Page locked
-		printf("Pinned success\n");
-		return mat;
-	}
-	if (input == 2) //UNIFIED MEM
-	{
-		int*mat;
-		/*
-		unified = true; 
-		cudaMallocManaged() */
-		return mat;
-	}
-	fprintf(stderr,"Something wrong?" );
-return 0;
-}
-
+*/
 void setProp(int d){
 	gpuErrchk(cudaSetDevice(d));
 	gpuErrchk(cudaGetDeviceProperties(&PROPS,d));
 }
 cudaDeviceProp getProp(){
 	return(PROPS);
+}
+void SetUnified(int i){
+	unified=1;
+}
+void SetPinned(int i){
+	PINNED = 1;
+}
+
+int GetPinned(){
+	return PINNED;
+}
+int GetUnified(){
+	return unified;
 }

@@ -14,7 +14,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 
-void MatrixOperation(int* &aC, int* &bC, int*&cC, long long width1, long long height1, long long width2, long long height2, int* &a,int*& b,int*& c, cudaDeviceProp* prop);  
+void MatrixOperation(long long width1, long long height1, long long width2, long long height2, cudaDeviceProp* prop);  
 
 __global__ void multiplication(int *A, int* B, int* C, int N, int BlockSIZE);
 
@@ -28,4 +28,7 @@ void SetPinned(int i);
 void SetUnified(int i);
 int GetUnified();
 int SetUnified();
+unsigned long GetN();
+dim3 GetGrid();
+dim3 GetBlock();
 #endif // MATRIXOPERATION_H_

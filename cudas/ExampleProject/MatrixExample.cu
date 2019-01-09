@@ -116,9 +116,9 @@ mat[0] to mat[m] = the first row, mat[m+1] = the second row. mat[2*m+1] = third 
   - n : amount of rows
   - m : amount of colombs in the matrix
 
-  MOVE TO MAIN CLASS
+  MOVE TO SIDE CLASS
 **/
-int RowMajorMat(int** mat, long long n,long long m, int * & a){
+int RowMajorMat(int** mat, long long n,long long m, int *&a){
 
 unsigned long long ss = n*m;
 int input;
@@ -130,6 +130,7 @@ int input;
 		SetPinned(42);
 		printf("array = %p\n",&a );
 		gpuErrchk(cudaHostAlloc((void**)&a,ss*sizeof(int),cudaHostAllocPortable));
+    printf("arrayP = %p\n",a );
 	}
 	if(input==2)
 	{
@@ -188,40 +189,92 @@ int main(int argc, char** argv){
   printf("MatrixB row2:%d,%d,%d \n",matrixB[1][0],matrixB[1][1],matrixB[1][2]);
 
   // Get row and col size
-  int num_rows = N;///ARRAYSIZE(matrixA); //row = sizeof(matrix)/sizeof(matrix[0])
-  int num_cols = N;//ARRAYSIZE(matrixA[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
-  int num_rows1 = N; //ARRAYSIZE(matrixB); //row = sizeof(matrix)/sizeof(matrix[0])
-  int num_cols1 = N;//ARRAYSIZE(matrixB[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
+  unsigned long long num_rows = N;///ARRAYSIZE(matrixA); //row = sizeof(matrix)/sizeof(matrix[0])
+  unsigned long long num_cols = N;//ARRAYSIZE(matrixA[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
+  unsigned long long num_rows1 = N; //ARRAYSIZE(matrixB); //row = sizeof(matrix)/sizeof(matrix[0])
+  unsigned long long num_cols1 = N;//ARRAYSIZE(matrixB[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
   
-  int size1 = (num_rows*num_cols) * sizeof(int); // for malloc and memcpy
-  //int size2 = (num_rows*num_cols) * sizeof(int); // for malloc and memcpy
+  long long MaxData = (num_rows*num_cols);
 
-  printf("size1 = %d\n", size1);
   printf("rows = %d \n",num_rows );
   printf("cols = %d\n", num_cols);
 
   int *a, *b, *c; //host vectors
+  gpuErrchk(cudaHostAlloc((void**)&c,(N*N)*sizeof(int),cudaHostAllocPortable));
   printf("a = %p\n",&a );
   if(!(RowMajorMat(matrixA, num_rows,num_cols, a)))fprintf(stderr, "Unable to alocate memory on host\n");
   printf("b = %p\n",&b );
   if(!(RowMajorMat(matrixB, num_rows1,num_cols1,b)))fprintf(stderr, "Unable to alocate memory on host\n");
 
   free(matrixA); free(matrixB);
-  
-  int *aC,*bC,*cC;//cuda vectors
 
-	MatrixOperation(aC, bC, cC,num_cols,num_rows,num_cols1,num_rows1, a, b, c, &pp);
+  printf("----------------MatrixOperation-------------------------\n");
+	MatrixOperation(num_cols,num_rows,num_cols1,num_rows1, &pp);
 
-  printf("\n freeing all vectors from memory");
 
-  Check(a,b,N*N,c);
+  /*------------Basic Generic Setup------------------- */
+  int* aC;
+  int* bC;
+  int* cC;
+  unsigned long Nn = GetN();
+  dim3 GRID = GetGrid();
+  dim3 BLOCK = GetBlock();
 
-  free(a); free(b); free(c);
-  cudaFree(aC); cudaFree(bC); cudaFree(cC);//changed to cuda free
+  printf("N =%d\n",N);
+  printf("GRID = %d,%d\n",GRID.x,GRID.y );
+  printf("BLOCK = %d,%d\n",BLOCK.x,BLOCK.y );
+
+  cudaStream_t stream0;
+  cudaEvent_t start,stop;
+  float time;
+
+  gpuErrchk(cudaEventCreate(&start));
+  gpuErrchk(cudaEventCreate(&stop));
+  gpuErrchk( cudaStreamCreate( &stream0 ) );
+  //Timer START LETS GOOO!
+  gpuErrchk(cudaEventRecord(start,0));
+  //malloc
+  printf("CudaMalloc\n");
+  gpuErrchk(cudaMalloc((void**)&aC, Nn*sizeof(int)));
+  gpuErrchk(cudaMalloc((void**)&bC, Nn*sizeof(int)));
+  gpuErrchk(cudaMalloc((void**)&cC, Nn*sizeof(int)));
+
+  printf("a[%d]\n",a[0]);
+
+  printf("----------------------For LOOP--------------------------------\n");
+/*---------------------ASYNC STREAM LOOP------------------------------*/
+    for (int i = 0; i < MaxData; i+=Nn)
+    {
+      
+      gpuErrchk(cudaMemcpyAsync(aC,a+i,Nn*sizeof(int),cudaMemcpyHostToDevice,stream0));
+      gpuErrchk(cudaMemcpyAsync(bC,b+i,Nn*sizeof(int),cudaMemcpyHostToDevice,stream0));
+      //                  multiply                  //
+      multiplication<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,N,BLOCK.x);
+      gpuErrchk(cudaMemcpyAsync(c+i,cC,Nn*sizeof(int),cudaMemcpyDeviceToHost,stream0)); //i = N;
+    }
+    gpuErrchk(cudaStreamSynchronize(stream0)); // Tell CPU to hold his horses and wait
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaEventRecord(stop,0));
+    gpuErrchk(cudaEventSynchronize(stop));
+    gpuErrchk(cudaEventElapsedTime(&time, start, stop));
+
+    printf("Time Taken: %3.1f ms/n \n",time);
+    gpuErrchk(cudaStreamDestroy(stream0));
+
+
+  printf("\n freeing all vectors from memory\n");
+
+  if(!(Check(a,b,N*N,c))){
+    gpuErrchk( cudaFreeHost( a ) );
+    gpuErrchk( cudaFreeHost( b ) );
+    gpuErrchk( cudaFreeHost( c ) );
+    gpuErrchk( cudaFree( aC ) );
+    gpuErrchk( cudaFree( bC ) );
+    gpuErrchk( cudaFree( cC ) );
+  }
   
   return 0;
 }
-
 /**
   Verify if multiplication output is correct
 **/
@@ -236,9 +289,10 @@ int Check(int* a1, int* b1, int nm, int* c){
     }
 
     if(c[i*nm+nm]!=sum){
-      printf("thats wrong bro, index = %d\n",i*nm+nm);
+      printf("thats wrong bro, index = %d, value should be=%d, but it is = %d\n",i*nm+nm, sum,c[i*nm+nm]);
       return(0);
     }
   }
+printf("no error\n");  
 return(1);
 }

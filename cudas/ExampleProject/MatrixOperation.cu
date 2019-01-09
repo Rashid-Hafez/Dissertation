@@ -19,6 +19,7 @@ int partitions = 2;
 int BlockSIZE;
 dim3 GRID; dim3 BLOCK;
 static cudaDeviceProp PROPS;
+static unsigned long N;
 //-------------------------------------------------------------------------------
 
 /****************************************** 
@@ -34,9 +35,10 @@ Row based square matrix multiplication with optimised shared memory kernel.
 
 ********************************************/
 __global__ void multiplication(int *A, int* B, int *C, int N, int BlockSIZE){
-   int ROW = blockIdx.y*BlockSIZE+threadIdx.y; // BlockIndex * BlocksizeY + ThreadY
-   int COL = blockIdx.x*BlockSIZE+threadIdx.x;
+   int ROW = blockIdx.y*blockDim.y+threadIdx.y; // BlockIndex * BlocksizeY + ThreadY
+   int COL = blockIdx.x*blockDim.x+threadIdx.x;
    int sum = 0;
+   
    if (ROW < N && COL < N){ //TODO: ZERO OUT OF BOUNDS
 
    	for (int i = 0; i < N; ++i)
@@ -47,97 +49,48 @@ __global__ void multiplication(int *A, int* B, int *C, int N, int BlockSIZE){
    }
 }
 
-void MatrixOperation(int* &aC, int*& bC, int* &cC, long long width1, long long height1, long long width2,
-	long long height2, int *&a,int*& b,int*& c, cudaDeviceProp *prop){
-
-	int * test;
-	int * test2;
-	int* aCC;
-
-		gpuErrchk(cudaMallocHost((void**)&test,120*sizeof(int)));
-		gpuErrchk(cudaMalloc((void**)&aCC, 120*sizeof(int)));
-		size_t abb = 120*sizeof(int);
-		gpuErrchk(cudaMemcpy(aCC,test,abb,cudaMemcpyHostToDevice));
-
+void MatrixOperation(long long width1, long long height1, long long width2,
+	long long height2, cudaDeviceProp *prop){
 
 	if(width1 != height2){
 		printf("Error, width of first mat must = height of second mat\n");
 		exit(0);
 	}
 
-	/*------------Basic Generic Setup------------------- */
-	cudaStream_t stream0;
-	cudaEvent_t start,stop;
-	float time;
-
 	if (PINNED) //if page locked memory on matrix
 	{	printf("Pinned... Partitioning\n");
 
 	/*------------------Partition------------------------*/
-		unsigned long long SplitA_Row;
-		unsigned long long SplitB_Col;
-		unsigned long long N;
+		unsigned long SplitA_Row;
+		unsigned long SplitB_Col;
+		unsigned long Nn;
 		unsigned long long MaxData = height1 * width2; //total entries of A and B
-		unsigned long long SubMatSize;
+		printf("MaxData = %d\n",MaxData);
 
 		SplitA_Row = ceil (height1/partitions) ;
 		SplitB_Col = ceil (width2/partitions) ;
 		//Make N at Least Half the grid size 
-		N = SplitA_Row*SplitB_Col;
+		Nn = SplitA_Row*SplitB_Col;
 
-		while(N>=GRIDSIZE){
-			if (N<GRIDSIZE) //Safety precaution
+		while(Nn>=GRIDSIZE){
+			if (Nn<GRIDSIZE) //Safety precaution
 			{
 				printf("N is solved\n");
 				break;
 			}
-			if (N>= GRIDSIZE) //If our matrix is still too big then...
+			if (Nn>= GRIDSIZE) //If our matrix is still too big then...
 			{
 				printf("N BIGGER THAN GRIDSIZE\n");
 				SplitA_Row = ceil(SplitA_Row/partitions);
 				SplitB_Col = ceil(SplitB_Col/partitions);
-				N = SplitA_Row * SplitB_Col;
+				Nn = SplitA_Row * SplitB_Col;
 			}
 		}
-		
+
+		N = Nn;
 		SetupDim(SplitA_Row, SplitB_Col, *prop);
-		
-		gpuErrchk(cudaEventCreate(&start));
-		gpuErrchk(cudaEventCreate(&stop));
-
-		//Timer START LETS GOOO!
-		gpuErrchk(cudaEventRecord(start,0));
-		//malloc
-		printf("CudaMalloc\n");
-		gpuErrchk(cudaMalloc((void**)&aC, N*sizeof(int)));
-		gpuErrchk(cudaMalloc((void**)&bC, N*sizeof(int)));
-		gpuErrchk(cudaMalloc((void**)&cC, N*sizeof(int)));
-
-		printf("a = %p\n",&a);
-		printf("b = %p\n",&b);
-		
-	
-/*---------------------ASYNC STREAM LOOP------------------------------*/
-		for (int i = 0; i < MaxData; i+=N)
-		{
-			printf("%p\n",&a+i ); 
-			gpuErrchk(cudaMemcpy(aC,test+i,N*sizeof(int),cudaMemcpyHostToDevice));
-			gpuErrchk(cudaMemcpyAsync(bC,b+i,N*sizeof(int),cudaMemcpyHostToDevice,stream0));
-			//									multiply									//
-			multiplication<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,height1,BlockSIZE);
-			//
-			gpuErrchk(cudaMemcpyAsync(c+i,cC,N*sizeof(int),cudaMemcpyDeviceToHost,stream0)); //i = N;
-		}
-
-		gpuErrchk(cudaStreamSynchronize(stream0)); // Tell CPU to hold his horses and wait
-		gpuErrchk(cudaEventRecord(stop,0));
-		gpuErrchk(cudaEventSynchronize(stop));
-		gpuErrchk(cudaEventElapsedTime(&time, start, stop));
-
-		printf("Time Taken: %3.1f ms/n \n",time);
-
-		gpuErrchk(cudaStreamDestroy(stream0));
 	}
+	
 /*----------------------------------------------------------------------------*/
 
 else if (unified)
@@ -152,15 +105,8 @@ else if (unified)
 
 		printf("Size1 = %d\n",size1);
 		printf("Height1 = %d\n",height1);
-		
-		SetupDim(width1,height2,*prop);
-		cudaMalloc((void**)&aC, size1);
-		cudaMalloc((void**)&bC,size2);
-		cudaMalloc((void**)&cC, size2);
 
 		gpuErrchk( cudaPeekAtLastError() );
-		//cudaDeviceSynchronize();
-		gpuErrchk(cudaMemcpy(&c,cC,size1,cudaMemcpyDeviceToHost));
 	}
 }
 
@@ -179,8 +125,8 @@ void SetupDim (long long width1, long long height2, cudaDeviceProp prop){
 	{
 		int bblock = BLOCKSIZE;
 		printf("Device compute is 2 or over, utilizing thread count\n");
-		int gCol = ceil(width1/BLOCKSIZE);
-		int gRow = ceil(height2/BLOCKSIZE);
+		int gCol = ceil((width1+BLOCKSIZE-1)/BLOCKSIZE);
+		int gRow = ceil((height2+BLOCKSIZE-1)/BLOCKSIZE);
 		// printf("Grid is %d by %d \n",gCol,gRow );
 		dim3 grid(gCol,gRow);
 		dim3 block(bblock,bblock); //(BLOCKSIZE,BLOCKSIZE) 
@@ -192,11 +138,11 @@ void SetupDim (long long width1, long long height2, cudaDeviceProp prop){
 	else{
 		printf("Device Compute Capacity less than 2, reducing threadcount\n");
 		BlockSIZE = 16;
-		int gCol = ceil(width1/BLOCKSIZE);
-		int gRow = ceil(height2/BLOCKSIZE);
+		int gCol = ceil((width1+BLOCKSIZE-1)/BLOCKSIZE);
+		int gRow = ceil((height2+BLOCKSIZE-1)/BLOCKSIZE);
 		printf("Grid is %d by %d \n", gCol, gRow);
-		dim3 grid(gCol,gRow);
-		dim3 block(BlockSIZE,BlockSIZE); //(BLOCKSIZE,BLOCKSIZE); //32*32 threads per block. = 1024; Studies suggest this isn't always the most optimal.
+		dim3 grid(gCol,gRow,1);
+		dim3 block(BlockSIZE,BlockSIZE,1); //(BLOCKSIZE,BLOCKSIZE); //32*32 threads per block. = 1024; Studies suggest this isn't always the most optimal.
 		
 		GRID = grid;
 		BLOCK = block;
@@ -261,4 +207,13 @@ int GetPinned(){
 }
 int GetUnified(){
 	return unified;
+}
+unsigned long GetN(){
+	return N;
+}
+dim3 GetGrid(){
+	return GRID;
+}
+dim3 GetBlock(){
+	return BLOCK;
 }

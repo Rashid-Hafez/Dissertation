@@ -1,11 +1,29 @@
 /**
 
+ASK:
+
+  usually matrices are given in row major ordering. Would it be practicle to convert row to column or just assume B is in column
+  order already?
+
+  should i do program flexibility... (for example: if !thisProperty then threads=3498 )
+
+  should i just start with very large transpose first?
+  
+  Should i even transpose B?
+  2 KERNELS?.. transpose B to column because each column start is miles apart
+  Has it become a Vector Calculation now... because the 2d aspect of the 1D array doesnt fit. only half the row fits.
+  
+  Should I keep it as a row & column problem. or just a vector row problem... do you think it can be solved in a 2d fasion?
+
+
 TODO: 
 ------------------------
 Async Stream
 Shared Mem/Tiling
 Column based
 Matrix Struct
+MallocPitched
+2d access in kernel
 ------------------------
 
 Tests to conduct:
@@ -15,9 +33,9 @@ Tests to conduct:
 - 3 Stream vs non stream 
 - 4 Stream Count    // Studies suggest 2 streams most optimal
 - 5 Unified vs Pinned //I think Unified will be faster
-
 - 6 Thread Count/Blocksize/BlockCount. This needs to be adapted for every test.
-- 7 B =Column based  A =row based. vicea versa
+
+- 7: make B column based at the start vs make it row based, then add the column indexes in order to a seperate array and send to GPU.
 
 
 Notes:
@@ -56,8 +74,9 @@ so array[idx] = array [idx+1] WRONG!!!
   - Cuda By Example
   - HP
   - Stencil Kernel
-  - 
 
+  - export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/Developer/NVIDIA/CUDA-10.0/lib
+  - export PATH=/Developer/NVIDIA/CUDA-10.0/bin${PATH:+:${PATH}}
 **/
 
 /**
@@ -74,7 +93,8 @@ Example of main class doing opertations on matrices. This class takes a premade 
 /////////////// MACROS and GLOBALS: //////////////
 #define N 4
 #define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0])) //will only work with stationary pointer
-int Check(int*a,int*b,int nm, int*c);
+int Check(long long*a,long long*b,unsigned long long nm, long long*c);
+int CheckR(long long* a1, long long* b1, unsigned long long nm, long long* c);
 /////////////////////////////
 struct Matrix
 {
@@ -95,15 +115,6 @@ void randomInit(int* data, int size)
         }
 }
 //////////////////////////////////////////////////////////
-//Basic vector addition. Just here for debugging purposes.
-__global__ void vectorAdd(int * aC, int* bC,int* cC){
-  
-  if(blockIdx.x<N){
-    cC[blockIdx.x] = aC[blockIdx.x] + bC[blockIdx.x];
-  }
-}
-///////////////////////////////////////////////////////////////////////////////////////
-
 /**
 Description:
 Convert normal matrix to ROW MAJOR matrix, if the matrices are bigger than the GPU memory the function will use pinned memory (i.e. hostmalloc). 
@@ -118,7 +129,7 @@ mat[0] to mat[m] = the first row, mat[m+1] = the second row. mat[2*m+1] = third 
 
   MOVE TO SIDE CLASS
 **/
-int RowMajorMat(int** mat, long long n,long long m, int *&a){
+int RowMajorMat(long long** mat, unsigned long long n,unsigned long long m, long long *&a){
 
 unsigned long long ss = n*m;
 int input;
@@ -129,7 +140,6 @@ int input;
 		printf("Pinned!\n");
 		SetPinned(42);
 		printf("array = %p\n",&a );
-		gpuErrchk(cudaHostAlloc((void**)&a,ss*sizeof(int),cudaHostAllocPortable));
     printf("arrayP = %p\n",a );
 	}
 	if(input==2)
@@ -138,7 +148,7 @@ int input;
 	}
 	if (input==3)
 	{
-		if(!(a = (int*)malloc(ss*sizeof(int))))return 0;
+		if(!(a = (long long*)malloc(ss*sizeof(unsigned long long))))return 0;
 	}
   for (long i = 0; i<n; i++){
     for (long j =0; j<m; j++){
@@ -157,36 +167,32 @@ int main(int argc, char** argv){
   setProp(Dev);
   pp = getProp();
 //-----------------------------------------------------------
-
   srand(356);
 
   printf("Initialised\n");
   printf("Creating Template Matrix\n");
-  int rowz = N;
-  int colz = rowz;
-  printf("colz = %d\n",colz );
 
-  int **matrixA = (int**) malloc(rowz * sizeof (int*));
-  for (int i = 0; i<rowz; i++){
-    matrixA[i] = (int *) malloc(colz * sizeof(int));
+  long long **matrixA = (long long**) malloc(N * sizeof (long long*));
+  for (int i = 0; i<N; i++){
+    matrixA[i] = (long long *) malloc(N * sizeof(unsigned long long));
   }
-  int **matrixB = (int**) malloc(rowz * sizeof (int*));
-  for (int i = 0; i<rowz; i++){
-    matrixB[i] = (int *) malloc(colz * sizeof(int));
+  long long **matrixB = (long long**) malloc(N * sizeof (long long*));
+  for (int i = 0; i<N; i++){
+    matrixB[i] = (long long *) malloc(N * sizeof(unsigned long long));
   }
- 
-  for(int i = 0; i<rowz; i++){
-    for(int j =0; j<colz; j++){
+
+  for(long i = 0; i<N; i++){
+    for(long j =0; j<N; j++){
       matrixA[i][j] = rand()%100;
       matrixB[i][j] = rand()%100;
     }
   }
 
-  printf("Matrix before RowMajor: \n");
-  printf("MatrixA row1:%d,%d,%d \n",matrixA[0][0],matrixA[0][1],matrixA[0][2]);
-  printf("MatrixA row2:%d,%d,%d \n",matrixA[1][0],matrixA[1][1],matrixA[1][2]);
-  printf("MatrixB row1:%d,%d,%d \n",matrixB[0][0],matrixB[0][1],matrixB[0][2]);
-  printf("MatrixB row2:%d,%d,%d \n",matrixB[1][0],matrixB[1][1],matrixB[1][2]);
+  // printf("Matrix before RowMajor: \n");
+  // printf("MatrixA row1:%d,%d,%d \n",matrixA[0][0],matrixA[0][1],matrixA[0][2]);
+  // printf("MatrixA row2:%d,%d,%d \n",matrixA[1][0],matrixA[1][1],matrixA[1][2]);
+  // printf("MatrixB row1:%d,%d,%d \n",matrixB[0][0],matrixB[0][1],matrixB[0][2]);
+  // printf("MatrixB row2:%d,%d,%d \n",matrixB[1][0],matrixB[1][1],matrixB[1][2]);
 
   // Get row and col size
   unsigned long long num_rows = N;///ARRAYSIZE(matrixA); //row = sizeof(matrix)/sizeof(matrix[0])
@@ -194,33 +200,40 @@ int main(int argc, char** argv){
   unsigned long long num_rows1 = N; //ARRAYSIZE(matrixB); //row = sizeof(matrix)/sizeof(matrix[0])
   unsigned long long num_cols1 = N;//ARRAYSIZE(matrixB[0]);  //col = sizeof(matrix[0])/sizeof(matrix[0][0])
   
-  long long MaxData = (num_rows*num_cols);
+  unsigned long long MaxData = (num_rows*num_cols);
 
-  printf("rows = %d \n",num_rows );
-  printf("cols = %d\n", num_cols);
+  printf("rows = %llu \n",num_rows );
+  printf("cols = %llu\n", num_cols);
 
-  int *a, *b, *c; //host vectors
-  gpuErrchk(cudaHostAlloc((void**)&c,(N*N)*sizeof(int),cudaHostAllocPortable));
+  //host vectors
+  long long * a; 
+  long long * b;
+  long long * c;
+
+  gpuErrchk(cudaHostAlloc((void**)&c,((MaxData)*sizeof(unsigned long long)),cudaHostAllocPortable));
+  gpuErrchk(cudaHostAlloc((void**)&a,((MaxData)*sizeof(unsigned long long)),cudaHostAllocPortable));
+  gpuErrchk(cudaHostAlloc((void**)&b,((MaxData)*sizeof(unsigned long long)),cudaHostAllocPortable));
+
   printf("a = %p\n",&a );
   if(!(RowMajorMat(matrixA, num_rows,num_cols, a)))fprintf(stderr, "Unable to alocate memory on host\n");
   printf("b = %p\n",&b );
-  if(!(RowMajorMat(matrixB, num_rows1,num_cols1,b)))fprintf(stderr, "Unable to alocate memory on host\n");
+  if(!(ColMajorMat(matrixB,num_rows1,num_cols1, b)))fprintf(stderr, "Unable to alocate memory on host\n");
 
   free(matrixA); free(matrixB);
 
   printf("----------------MatrixOperation-------------------------\n");
 	MatrixOperation(num_cols,num_rows,num_cols1,num_rows1, &pp);
-
-
   /*------------Basic Generic Setup------------------- */
-  int* aC;
-  int* bC;
-  int* cC;
-  unsigned long Nn = GetN();
+  long long * aC;
+  long long * bC;
+  long long * cC;
+
+  unsigned int Nn = GetN(); // Partition
+
   dim3 GRID = GetGrid();
   dim3 BLOCK = GetBlock();
 
-  printf("N =%d\n",N);
+  printf("N =%llu\n",Nn);
   printf("GRID = %d,%d\n",GRID.x,GRID.y );
   printf("BLOCK = %d,%d\n",BLOCK.x,BLOCK.y );
 
@@ -235,23 +248,46 @@ int main(int argc, char** argv){
   gpuErrchk(cudaEventRecord(start,0));
   //malloc
   printf("CudaMalloc\n");
-  gpuErrchk(cudaMalloc((void**)&aC, Nn*sizeof(int)));
-  gpuErrchk(cudaMalloc((void**)&bC, Nn*sizeof(int)));
-  gpuErrchk(cudaMalloc((void**)&cC, Nn*sizeof(int)));
+  gpuErrchk(cudaMalloc((void**)&aC, (MaxData*sizeof(unsigned long long))));
+  gpuErrchk(cudaMalloc((void**)&bC, (MaxData*sizeof(unsigned long long))));
+  gpuErrchk(cudaMalloc((void**)&cC, (MaxData*sizeof(unsigned long long))));
 
-  printf("a[%d]\n",a[0]);
+  printf("a[%lld]\n",a[0]);
 
-  printf("----------------------For LOOP--------------------------------\n");
-/*---------------------ASYNC STREAM LOOP------------------------------*/
-    for (int i = 0; i < MaxData; i+=Nn)
-    {
-      
-      gpuErrchk(cudaMemcpyAsync(aC,a+i,Nn*sizeof(int),cudaMemcpyHostToDevice,stream0));
-      gpuErrchk(cudaMemcpyAsync(bC,b+i,Nn*sizeof(int),cudaMemcpyHostToDevice,stream0));
-      //                  multiply                  //
-      multiplication<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,N,BLOCK.x);
-      gpuErrchk(cudaMemcpyAsync(c+i,cC,Nn*sizeof(int),cudaMemcpyDeviceToHost,stream0)); //i = N;
-    }
+   cudaDeviceSynchronize();
+   //gpuErrchk(cudaDeviceSetLimit(cudaLimitStackSize, Nn));
+   unsigned long long r = getRow(); //wA //wB
+   unsigned long long col = getCol();
+
+   printf("r = %llu, col = %llu \n",r,col );
+
+  /*
+    If rows in A bigger than. num_colsA=rowSize. r=halfRowsize. We may have to send N  A and B and mult them
+    then add it to C[0]. then send it back. and do it again. then when C[0] is complete. send the next row of and and B
+    if(A_Row % N == 0)
+  */
+
+   printf("----------------------For LOOP--------------------------------\n");
+
+   gpuErrchk(cudaMemcpyAsync(aC,(a),(MaxData*sizeof(long long)),cudaMemcpyHostToDevice,stream0));
+   gpuErrchk(cudaMemcpyAsync(bC,(b),(MaxData*sizeof(long long)),cudaMemcpyHostToDevice,stream0));
+     // printf("i = %d, a = %d, &a= %p, b= %d, &b= %p, c= %d, &c= %p\n",i, a[i], (&a)+i, b[i], (&b)+i, c[i], (&c)+i );
+   multiplicationR<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,r,col);
+   gpuErrchk(cudaMemcpyAsync(c,cC,(MaxData*sizeof(long long)),cudaMemcpyDeviceToHost,stream0)); //i = N;
+
+
+
+   /*---------------------ASYNC STREAM LOOP------------------------------*/
+    // for (int i = 0; i < MaxData; i+=Nn)
+    // {
+     
+    //   gpuErrchk(cudaMemcpyAsync(aC,(a+i),(Nn*sizeof(int)),cudaMemcpyHostToDevice,stream0));
+    //   gpuErrchk(cudaMemcpyAsync(bC,(b+i),(Nn*sizeof(int)),cudaMemcpyHostToDevice,stream0));
+    //  // printf("i = %d, a = %d, &a= %p, b= %d, &b= %p, c= %d, &c= %p\n",i, a[i], (&a)+i, b[i], (&b)+i, c[i], (&c)+i );
+    //   multiplication<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,r,BLOCK.x);
+    //   gpuErrchk(cudaMemcpyAsync((c+i),cC,(Nn*sizeof(int)),cudaMemcpyDeviceToHost,stream0)); //i = N;
+    // }
+
     gpuErrchk(cudaStreamSynchronize(stream0)); // Tell CPU to hold his horses and wait
     cudaDeviceSynchronize();
     gpuErrchk(cudaEventRecord(stop,0));
@@ -260,39 +296,70 @@ int main(int argc, char** argv){
 
     printf("Time Taken: %3.1f ms/n \n",time);
     gpuErrchk(cudaStreamDestroy(stream0));
-
+    gpuErrchk(cudaEventDestroy(start));
+    gpuErrchk(cudaEventDestroy(stop));
 
   printf("\n freeing all vectors from memory\n");
 
-  if(!(Check(a,b,N*N,c))){
+  if(!(CheckR(a,b,N,c))){
+
+  }
+  else{
+
+  }
     gpuErrchk( cudaFreeHost( a ) );
     gpuErrchk( cudaFreeHost( b ) );
     gpuErrchk( cudaFreeHost( c ) );
     gpuErrchk( cudaFree( aC ) );
     gpuErrchk( cudaFree( bC ) );
     gpuErrchk( cudaFree( cC ) );
-  }
-  
   return 0;
 }
 /**
   Verify if multiplication output is correct
 **/
-int Check(int* a1, int* b1, int nm, int* c){
+int Check(long long* a1, long long* b1, unsigned long long nm, long long* c){
 
-  int sum;
-  for (int i = 0; i < nm; ++i)
-  {
-    for (int j = 0; j < nm; ++j)
+  for (unsigned long long i = 0; i < nm; ++i) 
     {
-      sum+= a1[i*nm+j] * b1[j*nm+nm]; 
-    }
-
-    if(c[i*nm+nm]!=sum){
-      printf("thats wrong bro, index = %d, value should be=%d, but it is = %d\n",i*nm+nm, sum,c[i*nm+nm]);
-      return(0);
-    }
-  }
+        for (unsigned long long j = 0; j < nm; ++j) 
+        {
+            unsigned long long sum = 0.0;
+            for (unsigned long long h = 0; h < nm; ++h) 
+            {
+                sum += a1[i * nm + h] * b1[h * nm + j];
+            }
+            if(c[i * nm + j] != sum)
+            {
+              printf("thats wrong bro, index = %d, value should be=%d, but it is = %d\n",i*nm+j,sum,c[i*nm+j]);
+            }
+        }
+}
 printf("no error\n");  
 return(1);
 }
+
+/**
+  Verify if multiplication output is correct for when B is COL BASED
+**/
+int CheckR(long long* a1, long long* b1, unsigned long long nm, long long* c){
+
+  for (unsigned long long i = 0; i < nm; ++i) 
+    {
+        for (unsigned long long j = 0; j < nm; ++j) 
+        {
+            unsigned long long sum = 0.0;
+            for (unsigned long long h = 0; h < nm; ++h) 
+            {
+                sum += a1[i * nm + h] * b1[i * nm + h];
+            }
+            if(c[i * nm + j] != sum)
+            {
+              printf("thats wrong bro, index = %d, value should be=%d, but it is = %d\n",i*nm+j,sum,c[i*nm+j]);
+            }
+        }
+}
+printf("no error\n");  
+return(1);
+}
+

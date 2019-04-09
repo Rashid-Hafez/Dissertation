@@ -5,16 +5,16 @@
  
 /////////////// MACROS and GLOBALS: ////////////// 
 #define N 100000000 
-#define BLOCK_SIZE 32 
 #define oneGB 100000000 
-long gMem; int gSize[3]; int wSize; int TPB;//max threads per block 
+#define BLOCK_SIZE 32 
+unsigned long long gMem; int gSize[3]; int wSize; int TPB;//max threads per block 
 ///////////////////////////// 
  
 typedef struct{ 
    
   unsigned long long M;//size 
-  unsigned int p; //partition 
-  unsigned int overflow; //overflow 
+  size_t p; //partition 
+  unsigned int overflow;  
   float * vec; 
 }VECTOR; 
  
@@ -29,7 +29,7 @@ void randomInit(float* &data)
         } 
 } 
 ////////////////////////////////////////////////////////// 
-
+ 
 /////////////////////////////////////////////////////////////////////////////////////// 
 int main(int argc, char** argv){ 
 
@@ -39,35 +39,32 @@ int main(int argc, char** argv){
   setProp(Dev); 
   pp = getProp(); 
    
-  cudaEvent_t start1,stop1;   
-  float time1;  
+  //timer 
+  cudaEvent_t start1,stop1;  
+  float time1;
   gpuErrchk(cudaEventCreate(&start1));  
-  gpuErrchk(cudaEventCreate(&stop1));
+  gpuErrchk(cudaEventCreate(&stop1));  
+  //Timer START LETS GOOO!  
   gpuErrchk(cudaEventRecord(start1,0));  
-  cudaEvent_t startP,stopP; 
-  float timeP; 
-  gpuErrchk(cudaEventCreate(&startP)); 
-  gpuErrchk(cudaEventCreate(&stopP)); 
-  gpuErrchk(cudaEventRecord(startP,0)); 
 
   gMem = pp.totalGlobalMem; 
   gSize[0] = pp.maxGridSize[0]; gSize[1] = pp.maxGridSize[1]; gSize[2] = pp.maxGridSize[2]; 
   wSize = pp.warpSize; 
   TPB = pp.maxThreadsPerBlock; 
-//  printf("total Global mem: %ld\n", gMem); 
-//  printf("maxGridSize= %d,%d,%d \n",gSize[0],gSize[1],gSize[2]); 
-//  printf("Warp Size: %d\n", wSize); 
-//  printf(" TPB: %d\n", TPB); 
+  //printf("total Global mem: %ld\n", gMem); 
+  //printf("maxGridSize= %d,%d,%d \n",gSize[0],gSize[1],gSize[2]); 
+  //printf("Warp Size: %d\n", wSize); 
+  //printf(" TPB: %d\n", TPB); 
 //----------------------------------------------------------- 
   srand(356); 
 
   printf("Initialised\n"); 
+  //printf("Creating Template Matrix\n"); 
 
   VECTOR v; 
   v.M = N; 
-  v.p =2; 
+  v.p = 2; 
   v.overflow = 0; 
-
   float * c; 
   unsigned long byteSize = (N*sizeof(unsigned long long)); 
   //Host 
@@ -81,91 +78,80 @@ int main(int argc, char** argv){
   printf("----------------Split up vector-------------------------\n"); 
 
   /*------------Basic Generic CUDA Setup------------------- */ 
-
+  float * aC; 
+   
   unsigned long long Nn = ceil(v.M / v.p); 
   unsigned long long bt = (long long)byteSize/v.p; 
   unsigned long long mem = (long long) (gMem-oneGB); 
   //printf("Nn=%llu, bt=%llu, mem=%llu",Nn,bt,mem); 
-   
-  while((bt)>mem){ 
+  while(bt>mem){ 
      
     v.p += 2; 
     bt = (long long)byteSize/v.p; 
-    Nn = v.M/v.p; 
+    Nn = v.M/v.p;
     v.overflow = v.M%v.p; 
   } 
 
-  dim3 BLOCK(BLOCK_SIZE); 
-  dim3 GRID(Nn+BLOCK.x-1/BLOCK.x); 
-
-  //printf("GRID(%lu,%d,%d), BLOCK(%d,%d,%d)\n",GRID.x,GRID.y,GRID.z,BLOCK.x,BLOCK.y,BLOCK.z); 
-  //printf("partition = %lu\n",v.p); 
-
-  cudaStream_t stream0; 
   cudaEvent_t start,stop; 
   float time; 
 
   gpuErrchk(cudaEventCreate(&start)); 
   gpuErrchk(cudaEventCreate(&stop)); 
-  gpuErrchk( cudaStreamCreate( &stream0)); 
   //Timer START LETS GOOO! 
   gpuErrchk(cudaEventRecord(start,0)); 
   //malloc 
-  float * aC; 
   gpuErrchk(cudaMalloc((void**)&aC, (Nn*sizeof( unsigned long long)))); 
 
-//----------------------START LOOP--------------------------------// 
+  dim3 BLOCK(BLOCK_SIZE); 
+  dim3 GRID((Nn+BLOCK.x-1/BLOCK.x)); 
 
-for (unsigned long long i = 0; i <= v.M-v.overflow; i+=Nn){ 
+ // printf("GRID(%d,%d,%d), BLOCK(%d,%d,%d)\n",GRID.x,GRID.y,GRID.z,BLOCK.x,BLOCK.y,BLOCK.z); 
 
-    gpuErrchk(cudaMemcpyAsync(aC,v.vec+i,(Nn*sizeof(unsigned long long)),cudaMemcpyHostToDevice,stream0)); 
+//----------------------START LOOP--------------------------------; 
 
-    Incr<<<GRID,BLOCK,0,stream0>>>(aC,Nn,i); 
+for (unsigned long long i = 0; i < v.M; i+=Nn){ 
 
-    gpuErrchk(cudaMemcpyAsync(c+i,aC,(Nn*sizeof(unsigned long long)),cudaMemcpyDeviceToHost,stream0)); //i = N; 
-  } 
+    gpuErrchk(cudaMemcpy(aC,v.vec+i,(Nn*sizeof(unsigned long long)),cudaMemcpyHostToDevice)); 
+
+    Incr<<<GRID,BLOCK,0>>>(aC,Nn,i); 
+
+    gpuErrchk(cudaMemcpy(c+i,aC,(Nn*sizeof(unsigned long long)),cudaMemcpyDeviceToHost)); //i = N; 
+  }   
   if (v.overflow) 
   { 
-    gpuErrchk(cudaMemcpyAsync(aC,v.vec+(v.M-v.overflow),(v.overflow*sizeof(unsigned long long)),cudaMemcpyHostToDevice,stream0)); 
-    Incr<<<GRID,BLOCK,0,stream0>>>(aC,v.overflow,v.overflow); 
-    gpuErrchk(cudaMemcpyAsync(c+(v.M-v.overflow),aC,(v.overflow*sizeof(unsigned long long)),cudaMemcpyDeviceToHost,stream0)); 
+    gpuErrchk(cudaMemcpy(aC,v.vec+(v.M-v.overflow),(v.overflow*sizeof(unsigned long long)),cudaMemcpyHostToDevice)); 
+    Incr<<<GRID,BLOCK,0>>>(aC,v.overflow,v.overflow); 
+    gpuErrchk(cudaMemcpy(c+(v.M-v.overflow),aC,(v.overflow*sizeof(unsigned long long)),cudaMemcpyDeviceToHost)); 
   } 
-//----------------------END LOOP--------------------------------// 
 
-    gpuErrchk(cudaStreamSynchronize(stream0)); // Tell CPU to hold his horses and wait 
+//----------------------END LOOP-------------------------------- 
     cudaDeviceSynchronize(); 
     gpuErrchk(cudaEventRecord(stop,0)); 
     gpuErrchk(cudaEventSynchronize(stop)); 
     gpuErrchk(cudaEventElapsedTime(&time, start, stop)); 
-    printf("Time Taken: %3.1f ms \n",time); 
-    gpuErrchk(cudaStreamDestroy(stream0)); 
+
+    printf("Time Taken: %3.1f ms/n \n",time); 
     gpuErrchk(cudaEventDestroy(start)); 
     gpuErrchk(cudaEventDestroy(stop)); 
-    printf("1 Stream\n"); 
+    printf("No stream\n"); 
+
+  printf("\n freeing all vectors from memory\n"); 
+  //  CheckI(v.vec,v.M,c); 
  
-    printf("\n freeing all vectors from memory\n"); 
+  gpuErrchk( cudaFreeHost( v.vec ) ); 
+  gpuErrchk( cudaFree( aC ) ); 
  
-    //CheckI(v.vec,v.M,c); 
- 
-    gpuErrchk( cudaFreeHost( v.vec ) ); 
-    gpuErrchk( cudaFree( aC ) ); 
-  gpuErrchk(cudaEventRecord(stopP,0)); 
-  gpuErrchk(cudaEventSynchronize(stopP)); 
-  gpuErrchk(cudaEventElapsedTime(&timeP, startP, stopP)); 
-  gpuErrchk(cudaEventDestroy(startP)); 
-  gpuErrchk(cudaEventDestroy(stopP)); 
- 
-    gpuErrchk(cudaEventRecord(stop1,0));   
+    gpuErrchk(cudaEventRecord(stop1,0));  
     gpuErrchk(cudaEventSynchronize(stop1));  
     gpuErrchk(cudaEventElapsedTime(&time1, start1, stop1));  
-    gpuErrchk(cudaEventDestroy(stop1));    
+  
+    printf("Whole Time Taken: %6f s/n \n",time1/1000);  
     gpuErrchk(cudaEventDestroy(start1));  
-    printf("Parallel Time Taken: %3.1f ms \n",time);  
-    time1 +=time;  
-    printf("Full Time Taken: %6f seconds \n",time1/1000.0000);  
+    gpuErrchk(cudaEventDestroy(stop1));  
+ 
   return 0; 
 } 
- 
+//Changed kernel to *3.3 
 int CheckI(float * vv, unsigned long s, float *&c){ 
    
   for (int i = 0; i <=s ; ++i) 
@@ -178,5 +164,5 @@ int CheckI(float * vv, unsigned long s, float *&c){
         return(0); 
     } 
   } 
-  return (42); 
+  return (0); 
 } 

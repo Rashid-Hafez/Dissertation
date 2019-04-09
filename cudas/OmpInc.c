@@ -1,11 +1,8 @@
 #include <stdio.h>      /* printf, NULL */  
 #include <stdlib.h>     /* srand, rand */  
-#include <omp.h>  
-#include <cuda.h>  
-#include <cuda_runtime.h> //for unroll 
-  
+#include <omp.h>   
 /////////////// MACROS and GLOBALS: //////////////  
-#define N 300000000 
+#define N 200000000 
 /////////////////////////////  
   
 typedef struct{  
@@ -16,7 +13,7 @@ typedef struct{
 }VECTOR;  
   
 //////////////////////////////////////////////////////////  
-void CheckI(float *vv, long long s);  
+void CheckI(float *vv, float *c,long long s);  
   
 void randomInit(float *data) 
 {  
@@ -28,7 +25,7 @@ void randomInit(float *data)
 //////////////////////////////////////////////////////////  
   
 ///////////////////////////////////////////////////////////////////////////////////////  
-int main(int argc, char** argv){  
+int main(){  
  
   double start_time = omp_get_wtime(); 
   srand(356);  
@@ -40,7 +37,7 @@ int main(int argc, char** argv){
   v.p =2;  
   v.overflow = 0;  
   
-  float * c;  
+
   unsigned long byteSize = (N*sizeof(unsigned long long));  
  
  /////  Malloc Array ////// 
@@ -52,31 +49,38 @@ int main(int argc, char** argv){
    
   double pTime = omp_get_wtime(); 
   printf("v[1000000] = %f\n", v.vec[1000000]); 
-  c = malloc(v.M * sizeof(long long)); 
-  CheckI(c,v.M); 
-  double time2 = omp_get_wtime()-pTime; 
-  printf("c[1000000] = %f\n", c[1000000]); 
-  free(v.vec); 
-  free(c); 
-  double time1 = omp_get_wtime() - start_time; 
+  
+  float * cc = (float*) malloc(v.M * sizeof(long long));
+  CheckI(v.vec,cc,v.M); 
+  double time2 = omp_get_wtime()-pTime;
   printf("Parallel Time = %6f \n",time2); 
-  printf("Whole Time = %6f \n",time1); 
+  printf("c[1000000] = %f\n", cc[1000000]); 
+  free(v.vec); 
+  free(cc); 
+  double time1 = omp_get_wtime() - start_time; 
+  
+  printf("Whole Time = %6f \n",time1);
+
+  return(0);
 } 
  
-void CheckI(float * vv, long long s){  
+void CheckI(float * vv, float*c,long long s){  
 // determine how many elements each process will work on 
- 
+   //c[900000] = 19.0f;
+   //printf("created C\n");
+   //printf("c[9000000] = %f\n",c[900000]);
 omp_set_num_threads(32); 
 //determine how many elements each process will work on 
-#pragma omp parallel shared(vv) 
+#pragma omp parallel 
   { 
   long long  i, id, numthread = 0; 
   long long size = s; 
   id = (long long) omp_get_thread_num(); //gets the current thread number 
   numthread = (long long) omp_get_num_threads(); 
+
   for(i = id; i<=size; i+=numthread)  
     {    
-        vv[i]*=3.3; 
-    } 
- } 
-} 
+      c[i] = vv[i]*3.3f;
+    }
+  } 
+}

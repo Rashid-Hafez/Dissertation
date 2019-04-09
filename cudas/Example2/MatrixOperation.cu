@@ -8,7 +8,7 @@ Name:
 #include <cuda_runtime.h>
 #include <math.h>
 #include "MatrixOperation.h"
-#define BLOCK_SIZE 32
+#define BLOCKSIZE 32
 #define MAX(a,b) (a>b ? a:b)
 int STRIDE;
 int unified =0;
@@ -25,32 +25,11 @@ static unsigned long long bCol;
 //-------------------------------------------------------------------------------
 
 //Basic vector addition. Just here for debugging purposes.
-__global__ void vectorM(long long * aC, long long* bC, long long* cC, int n){
-	
-	__shared__ float cache[BLOCK_SIZE];
-	int tid = threadIdx.x + blockIdx.x * blockDim.x; int cacheIndex = threadIdx.x;
-	float temp = 0; 
-
-	while (tid < n) {
-           temp += aC[tid] * bC[tid];
-           tid += blockDim.x * gridDim.x;
-       }
-       // set the cache values
-       cache[cacheIndex] = temp;
-       // synchronize threads in this block
-       __syncthreads();
-// for reductions, threadsPerBlock must be a power of 2 // because of the following code
-
-	int i = blockDim.x/2;
-	while (i != 0) {
-		if (cacheIndex < i){
-			cache[cacheIndex] += cache[cacheIndex + i];
-		}
-		__syncthreads();
-		i /= 2; 
-	}
-	if (cacheIndex == 0) 
-		cC[blockIdx.x] = cache[0];
+__global__ void vectorAdd(int * aC, int* bC,int* cC,int n){
+  
+  if(blockIdx.x<n){
+    cC[blockIdx.x] = aC[blockIdx.x] + bC[blockIdx.x];
+  }
 }
 
 
@@ -99,55 +78,60 @@ O(Log N) for reduction step.
 
 Reduction performed on __shared__ CACHE[]
 
-***************
-__global__ void BIG_DOT(float *A, float *B, float *P, unsigned int N) { 
-	
-	__shared__ float PS[BLOCK_SIZE];
-	
-	unsigned int i = blockIdx.z*( BLOCK_SIZE*2)+threadIdx.x; 
-	unsigned int tid = threadIdx.x;
-	unsigned int gridSize = BLOCK_SIZE*2*gridDim.z;
-	PS[tid] = 0;
-	//Step I: global memory reduction 
-	while(i < N) {
-		PS[tid] += A[blockIdx.x][i]* B[blockIdx.y][i]; 
-		PS[tid] += A[blockIdx.x][i+ BLOCK_SIZE]* B[blockIdx.y][i+ BLOCK_SIZE];
-		i+=gridSize;
-	}
-__syncthreads();
-//Step II: shared memory reduction
-	if (BLOCK_SIZE >= 512) 
-	{ 
-		if (tid < 256){ PS [tid] += PS [tid + 256]; }
-		__syncthreads(); 
+@Parameters:
+	- A: 1 Dimensional row based array
+	- B: 1 Dimensional column based array
+	- C: result matrix
+	- N: Size of row/column
+********************************************/
+__global__ void BIG_DOT(long long *A, long long* B, long long *C, unsigned long aCol, unsigned long bRow) //**a,**b,**c
+	{
+
+	__shared__ float cache[BLOCKSIZE][BLOCKSIZE]; //Store result of each thread in each block. There is 1 instance of this in each block that all threads share
+
+  unsigned int ROW = blockIdx.y*blockDim.y+threadIdx.y; // Index of a thread's Y position in the grid of blocks
+  unsigned int COL = blockIdx.x*blockDim.x+threadIdx.x; // Index of same thread's X position in the grid of blocks
+
+  unsigned int threadINDEX = threadIdx.y*blockDim.y+threadIdx.x; // index of thread in BLOCK. Stored in row order array. so we need to access like a row order.
+
+  int xx = threadIdx.x;
+  int yy = threadIdx.y;
+
+   int sum = 0; // move into while loop?
+
+   	while(ROW<aCol && COL<bRow) //disa makea no sense
+   	{
+   		for (int i = 0; i < bRow; ++i)
+   		{
+   			sum += A[ROW*aCol+i] * B[i * bRow + COL];  //COL IS LIMITED TO COL GRIDSIZE NOT N SIZE... make B colomn major. 0*4 + i
+   		}
+
+   		ROW += blockDim.y * gridDim.y; //Increment all threads at their position by the blocksize.
+   		COL += blockDim.x * gridDim.x; //Increment all threads at thier position by the blocksize
+   	}
+   	//Store result of THIS thread in Block memory
+   	cache[xx][yy]= sum; //all threads in this block can access
+   	__syncthreads();
+
+   	//The general idea is that each thread will add two of the values in cache[] and store the result back to cache[]. 
+   	//Since each thread combines two entries into one, we complete this step with half as many entries as we started with.
+//*basically* all the threads greater than 0 will compute a reduction and store it backwards until it reaches 0.
+   	int i = (blockDim.x*blockDim.y)/2;
+	while (i != 0) 
+	{
+		if (threadINDEX < i){ // In order to prevent the higher threads that completed from looping again
+			cache[xx][yy] += cache[xx + i][yy + i];
+		}
+		__syncthreads(); //this allows the first thread to read the new values in the cache, which have been computed by other threads.
+			i /= 2; // now we want to compute with the threads before this current thread
 	}
 
-	if (BLOCK_SIZE >= 256)
-	{ 
-		if (tid < 128) { PS [tid] += PS [tid + 128]; } 
-		__syncthreads();
-	} 
-	if (BLOCK_SIZE >= 128) 
+	if (threadINDEX == 0) //the first thread in each block. Obviously there are multiple threads with an index of 0 (in refrence to its position in a block)
 	{
-		if (tid < 64){ PS [tid] += PS [tid + 64]; }
-		__syncthreads(); 
-	}
-	if (tid<32)
-	{
-		if (BLOCK_SIZE >= 64){ PS [tid] += PS [tid + 32]; }
-		if (BLOCK_SIZE >= 32){ PS [tid] += PS [tid + 16]; }
-		if (BLOCK_SIZE >= 16){ PS [tid] += PS [tid + 8]; }
-		if (BLOCK_SIZE >= 8){ PS [tid] += PS [tid + 4]; }
-		if (BLOCK_SIZE >= 4){ PS [tid] += PS [tid + 2]; }
-		if (BLOCK_SIZE >= 2){ PS [tid] += PS [tid + 1]; }
-	}
-
-	if (tid==0)
-	{
-		P[blockIdx.x][blockIdx.y] =  PS[tid];
-	}
-
-}*/
+		//this part is hard... how would we store it?....
+   		C[blockIdx.x] = cache[0][0];
+   	}
+  }
 /****************************************** 
 
 @Description: BASIC SQUARED MULT_KERNEL

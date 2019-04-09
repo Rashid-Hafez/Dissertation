@@ -93,7 +93,7 @@ Example of main class doing opertations on matrices. This class takes a premade 
 // #include "Example.h"
 
 /////////////// MACROS and GLOBALS: //////////////
-#define N 100000
+#define N 4
 #define ARRAYSIZE(a) (sizeof(a) / sizeof(a[0])) //will only work with stationary pointer
 int Check(long long*a,long long*b,unsigned long long nm, long long*c);
 int CheckR(long long* a1, long long* b1, unsigned long long nm, long long* c);
@@ -105,7 +105,7 @@ struct Matrix
   int p; //partition wanting to send
 
   int* mat;
-};
+}mMatrix;
 //////////////////////////////////////////////////////////
 void randomInit(int* data, int size)
 {
@@ -211,8 +211,7 @@ int main(int argc, char** argv){
   long long * a; 
   long long * b;
   long long * c;
-  
-  //Host
+
   gpuErrchk(cudaHostAlloc((void**)&c,((MaxData)*sizeof(unsigned long long)),cudaHostAllocPortable));
   gpuErrchk(cudaHostAlloc((void**)&a,((MaxData)*sizeof(unsigned long long)),cudaHostAllocPortable));
   gpuErrchk(cudaHostAlloc((void**)&b,((MaxData)*sizeof(unsigned long long)),cudaHostAllocPortable));
@@ -223,8 +222,7 @@ int main(int argc, char** argv){
   if(!(RowMajorMat(matrixB,num_rows1,num_cols1, b)))fprintf(stderr, "Unable to alocate memory on host\n");
 
   printf("----------------MatrixOperation-------------------------\n");
-	
-  MatrixOperation(num_cols,num_rows,num_cols1,num_rows1, &pp);
+	MatrixOperation(num_cols,num_rows,num_cols1,num_rows1, &pp);
   /*------------Basic Generic Setup------------------- */
   long long * aC;
   long long * bC;
@@ -269,15 +267,15 @@ int main(int argc, char** argv){
     if(A_Row % N == 0)
   */
 
-printf("----------------------For LOOP--------------------------------\n");
-   for (int i = 0; i < MaxData; i+=Nn){
-    gpuErrchk(cudaMemcpyAsync(aC,(a+i),(Nn*sizeof(long long)),cudaMemcpyHostToDevice,stream0));
-    gpuErrchk(cudaMemcpyAsync(bC,(b+i),(Nn*sizeof(long long)),cudaMemcpyHostToDevice,stream0));
+   printf("----------------------For LOOP--------------------------------\n");
 
-    vectorM<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,Nn);
+   gpuErrchk(cudaMemcpyAsync(matrixA,(a),(MaxData*sizeof(long long)),cudaMemcpyHostToDevice,stream0));
+   gpuErrchk(cudaMemcpyAsync(bC,(b),(MaxData*sizeof(long long)),cudaMemcpyHostToDevice,stream0));
 
-    gpuErrchk(cudaMemcpyAsync(c,cC,(Nn*sizeof(long long)),cudaMemcpyDeviceToHost,stream0)); //i = N;
-  }
+   multiplicationR<<<GRID,BLOCK,0,stream0>>>(aC,bC,cC,r,col);
+   
+   gpuErrchk(cudaMemcpyAsync(c,cC,(MaxData*sizeof(long long)),cudaMemcpyDeviceToHost,stream0)); //i = N;
+
 
 
    /*---------------------ASYNC STREAM LOOP------------------------------*/
@@ -304,8 +302,12 @@ printf("----------------------For LOOP--------------------------------\n");
 
   printf("\n freeing all vectors from memory\n");
 
-  CheckR(a,b,N*N,c);
-    
+  if(!(Check(a,b,N,c))){
+
+  }
+  else{
+
+  }
     gpuErrchk( cudaFreeHost( a ) );
     gpuErrchk( cudaFreeHost( b ) );
     gpuErrchk( cudaFreeHost( c ) );
@@ -339,21 +341,26 @@ return(1);
 }
 
 /**
-  Verify if multiplication output is correct for dot product of vector
+  Verify if multiplication output is correct for when B is COL BASED
 **/
 int CheckR(long long* a1, long long* b1, unsigned long long nm, long long* c){
 
-  long long sum = 0.0f;
-
-  printf("C = %d\n",c[0]);
-
-  for (int i = 0; i < nm; ++i)
-  {
-    sum += a1[i] * b1[i];
-  }
-
-  printf("Sum = %llu \n",sum);
-
-  return (0);
+  for (unsigned long long i = 0; i < nm; ++i) 
+    {
+        for (unsigned long long j = 0; j < nm; ++j) 
+        {
+            unsigned long long sum = 0.0;
+            for (unsigned long long h = 0; h < nm; ++h) 
+            {
+                sum += a1[i * nm + h] * b1[i * nm + h];
+            }
+            if(c[i * nm + j] != sum)
+            {
+              printf("thats wrong bro, index = %d, value should be=%d, but it is = %d\n",i*nm+j,sum,c[i*nm+j]);
+            }
+        }
+}
+printf("no error\n");  
+return(1);
 }
 

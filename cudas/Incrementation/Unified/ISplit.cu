@@ -13,9 +13,9 @@ static cudaDeviceProp PROPS;
 *******************************/
 __global__ void Incr(float * vec, float* cc, unsigned long n, unsigned long long it){
 
-int x = threadIdx.x + blockIdx.x * blockDim.x;
-int y = threadIdx.y + blockIdx.y * blockDim.y;
-int offset = x + y * blockDim.x * gridDim.x; //works for any size and anything
+long long x = (long long)threadIdx.x + (long long)blockIdx.x * (long long)blockDim.x;
+long long y = (long long)threadIdx.y + (long long)blockIdx.y * (long long)blockDim.y;
+long long offset = x + y * (long long)blockDim.x * (long long)gridDim.x; //works for any size and anything
 
   	if(offset<=n){
   	   	cc[offset] = vec[offset] * 3.3f;

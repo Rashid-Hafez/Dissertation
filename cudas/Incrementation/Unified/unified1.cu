@@ -30,7 +30,7 @@ Example of main class doing opertations on matrices. This class takes a premade 
 #include "ISplit.h"
 
 /////////////// MACROS and GLOBALS: //////////////
-#define N 100000000
+#define N 400000000
 #define BLOCK_SIZE 32
 #define oneGB 100000000
 long gMem; int gSize[3]; int wSize; int TPB;//max threads per block
@@ -81,7 +81,7 @@ int main(int argc, char** argv){
   if (major<3)
   {
     fprintf(stderr, "Whoops Sorry! This device does not support unified memory!!\n", 30);
-    fprintf(stderr, "Exiting...",30)
+    fprintf(stderr, "Exiting...",30);
     exit(42);
   }
 //  printf("total Global mem: %ld\n", gMem);
@@ -106,8 +106,8 @@ int main(int argc, char** argv){
     
     v.p += 2; //make 2 more partitions
     bt = (long long)byteSize/v.p;
-    Nn = v.M/v.p; //adjust how many elements per partition
-    v.overflow = v.M%v.p; //check if there is an overflow
+    Nn = v.M/v.p; //size of array/partition adjust how many elements per partition
+    v.overflow = v.M%v.p; //how many elements are remainder
   }
 
   dim3 BLOCK(BLOCK_SIZE); //set the blocksize
@@ -120,25 +120,21 @@ int main(int argc, char** argv){
   gpuErrchk(cudaEventCreate(&start));
   gpuErrchk(cudaEventCreate(&stop));
   gpuErrchk( cudaStreamCreate(&stream0));
+
+  gpuErrchk(cudaMallocManaged(&v.vec, Nn*sizeof(unsigned long long)));
+  gpuErrchk(cudaMallocManaged(&c, Nn*sizeof(unsigned long long)));
+  gpuErrchk(cudaStreamAttachMemAsync(stream0,v.vec, 0,cudaMemAttachSingle));
+  gpuErrchk(cudaStreamAttachMemAsync(stream0, c, 0,cudaMemAttachSingle));
   //Timer START LETS GOOO!
   gpuErrchk(cudaEventRecord(start,0));
-
+  
   //----------------------START LOOP--------------------------------//
 
 for (unsigned long long i = 0; i < v.M-v.overflow; i+=Nn){
 
-//Malloc portion of array at a time to be processed
-
-    gpuErrchk(cudaMallocManaged(&v.vec, Nn*sizeof(unsigned long long)));
     randomInit(v.vec, Nn);
-    gpuErrchk(cudaMallocManaged(&c, Nn*sizeof(unsigned long long)));
-    gpuErrchk(cudaStreamAttachMemAsync(stream0,v.vec, 0,cudaMemAttachSingle));
-    gpuErrchk(cudaStreamAttachMemAsync(stream0, c, 0,cudaMemAttachSingle));
     Incr<<<GRID,BLOCK,0,stream0>>>(v.vec,c,Nn,i);
     cudaDeviceSynchronize();
-
-    gpuErrchk(cudaFree(v.vec));
-    gpuErrchk(cudaFree(c));
   }
 
 if (v.overflow)
@@ -148,11 +144,14 @@ if (v.overflow)
     c[i] = v.vec[i]*3.3;
   }
 }
-
 //----------------------END LOOP--------------------------------//
 
     gpuErrchk(cudaStreamSynchronize(stream0)); // Tell CPU to hold his horses and wait
     cudaDeviceSynchronize();
+
+    gpuErrchk(cudaFree(v.vec));
+    gpuErrchk(cudaFree(c));
+
     gpuErrchk(cudaEventRecord(stop,0));
     gpuErrchk(cudaEventSynchronize(stop));
     gpuErrchk(cudaEventElapsedTime(&time, start, stop));
@@ -177,7 +176,7 @@ int CheckI(float * vv, unsigned long s, float *c){
   {
     vv[in]*=3.3f;
 
-    if (vv[in]!=c[in])
+    if (vv[in]!=c[in] || c[in]==0.0f)
     {
       printf("vv[%llu]= %f, but c = %f\n",in,vv[in],c[in]);
       return(0);
@@ -185,4 +184,5 @@ int CheckI(float * vv, unsigned long s, float *c){
   }
   return (42);
 }
+
 
